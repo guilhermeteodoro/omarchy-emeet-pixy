@@ -80,13 +80,17 @@ preset bar below them on both; the last tab is kept for the next open:
 ### Static position
 
 Pan, tilt, zoom and Center are enabled only in Static: tracking and privacy
-drive the motors themselves. Neither emeet-pixyd nor V4L2 can read where they
-leave the motors (the firmware does not expose its live position, only stored
-preset slots), so the reported values go stale. The widget therefore remembers
-the last position seen in Static (`staticPosition` setting) and, whenever the
-camera comes back to Static from privacy or tracking (panel, right click or
-CLI), moves there through `center`, so the motors, the daemon and the sliders
-agree again.
+drive the motors themselves, and nothing can read where they leave them.
+emeet-pixyd and V4L2 keep reporting the last position that was *set*; on the
+PIXY (4K, `328f:00c0`) the firmware's `CMD_GET_MOTOR_POS` (`09 63 01 02`) and
+`CMD_SET_MOTOR_PRESET_POS` answer with the same fixed reply
+(`… 00 02 00 02 00 40`) whatever the position, so live polling is not possible.
+
+- **Tracking → Static** stops where tracking left the camera. The panel shows
+  each axis as "—" until it is set again (slider, Center, preset load).
+- **Privacy → Static** (panel, right click or CLI) returns to the last fully
+  known Static position (`staticPosition` setting), through `center` because
+  the daemon would skip a move to a position it already believes in.
 
 ### Presets
 
