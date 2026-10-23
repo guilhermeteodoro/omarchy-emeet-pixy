@@ -23,6 +23,9 @@ Panel {
   // Parsed `status`: camera, audio, gesture, pan, tilt, zoom, in_call, auto, device.
   property var status: ({})
   property var presets: []
+  // Panel tab; kept while the shell runs so reopening lands where you left.
+  property string tab: "camera"
+  readonly property var tabs: ["camera", "position", "image"]
   // Parsed `v4l2-ctl --list-ctrls-menus`, see Controls.js.
   property var controls: []
   readonly property string device: status.device || ""
@@ -153,6 +156,11 @@ Panel {
       blocked: presetName.activeFocus
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
+      onMoveRequested: function(dx, dy) {
+        if (dx === 0 || presetName.activeFocus) return
+        var i = (root.tabs.indexOf(root.tab) + dx + root.tabs.length) % root.tabs.length
+        root.tab = root.tabs[i]
+      }
 
       Flickable {
         id: flick
@@ -189,8 +197,20 @@ Panel {
           }
         }
 
+        Choice {
+          width: parent.width
+          value: root.tab
+          options: [
+            { value: "camera", label: "Camera", icon: "\u{F0100}" },
+            { value: "position", label: "Position", icon: "\u{F01A4}" },
+            { value: "image", label: "Image", icon: "\u{F02F1}" }
+          ]
+          onChanged: function(v) { root.tab = v }
+        }
+
         Section {
           title: "CAMERA"
+          visible: root.tab === "camera"
           Choice {
             value: root.camera
             options: [
@@ -215,6 +235,7 @@ Panel {
 
         Section {
           title: "AUDIO"
+          visible: root.tab === "camera"
           Choice {
             value: root.status.audio || ""
             options: [
@@ -228,6 +249,7 @@ Panel {
 
         Section {
           title: "AUTOMATION"
+          visible: root.tab === "camera"
           Toggle {
             width: parent.width
             label: "Gesture control"
@@ -249,6 +271,7 @@ Panel {
 
         Section {
           title: "PAN · TILT · ZOOM"
+          visible: root.tab === "position"
           SliderRow { text: "pan"; minimum: -150; maximum: 150; current: Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]) } }
           SliderRow { text: "tilt"; minimum: -90; maximum: 90; current: Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]) } }
           SliderRow { text: "zoom"; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]) } }
@@ -262,6 +285,7 @@ Panel {
 
         Section {
           title: "PRESETS"
+          visible: root.tab === "position"
           Flow {
             width: parent.width
             spacing: Style.space(6)
@@ -303,7 +327,16 @@ Panel {
 
         Section {
           title: "IMAGE"
-          visible: root.controls.length > 0
+          visible: root.tab === "image"
+          Text {
+            visible: root.controls.length === 0
+            textFormat: Text.PlainText
+            text: root.device === "" ? "No camera device reported by emeet-pixyd" : "Reading controls…"
+            color: root.fg
+            opacity: 0.6
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
           Repeater {
             model: root.controls
             Column {

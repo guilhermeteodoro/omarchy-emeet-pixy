@@ -34,18 +34,21 @@ color while tracking, and dimmed when the daemon is unreachable. The tooltip
 shows the mode, audio mode and call state.
 
 ## Panel
+Three tabs, switched by click or Left/Right (h/l); the last one is kept for the
+next open:
 
-| Section    | Controls                                  | emeet-pixyd command                        |
-|------------|-------------------------------------------|--------------------------------------------|
-| Camera     | Track / Static / Privacy                  | `track`, `idle`, `privacy`                 |
-| Audio      | Noise cancel / Live / Original            | `audio nc\|live\|org`                      |
-| Automation | Gesture control, Auto mode switches       | `toggle-gesture`, `toggle-auto`            |
-| PTZ        | Pan (±150), tilt (±90), zoom (100–150)    | `pan`, `tilt`, `zoom` (sent on release)    |
-|            | Center, Sync, Web UI                      | `center`, `sync`                           |
-| Presets    | Click to load, right click to delete      | `preset load`, `preset delete`             |
-|            | Name field + Save                         | `preset save <name>`                       |
-| Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`       |
-|            | Reset image to defaults                   | one `v4l2-ctl -c` with all defaults        |
+| Tab      | Section    | Controls                                  | Command                                  |
+|----------|------------|-------------------------------------------|------------------------------------------|
+| Camera   | Camera     | Track / Static / Privacy                  | `track`, `idle`, `privacy`               |
+|          |            | Face / Half body / Full body              | `tracking <variant>`                     |
+|          | Audio      | Noise cancel / Live / Original            | `audio nc\|live\|org`                    |
+|          | Automation | Gesture control, Auto mode switches       | `toggle-gesture`, `toggle-auto`          |
+| Position | PTZ        | Pan (±150), tilt (±90), zoom (100–150)    | `pan`, `tilt`, `zoom` (sent on release)  |
+|          |            | Center, Sync, Web UI                      | `center`, `sync`                         |
+|          | Presets    | Click to load, right click to delete      | `preset load`, `preset delete`           |
+|          |            | Name field + Save                         | `preset save <name>`                     |
+| Image    | Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`     |
+|          |            | Reset image to defaults                   | one `v4l2-ctl -c` with all defaults      |
 
 The Image section works like [cameractrls](https://github.com/soyersoyer/cameractrls):
 it lists the controls the driver reports (`v4l2-ctl --list-ctrls-menus`)
