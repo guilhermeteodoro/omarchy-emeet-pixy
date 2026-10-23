@@ -14,7 +14,8 @@ connects (replacing cameractrlsd and a privacy-on-connect udev hook).
   emeet-pixyd`); the widget calls its client (`emeet-pixy` or
   `emeet-pixyd <command>`). `~/.nix-profile/bin` and `~/.local/bin` are added
   to `PATH`, so a Nix profile install works without changes.
-- `v4l2-ctl` (v4l-utils), `/usr/bin/python3` (streaming probe), `udevadm` (systemd)
+- `v4l2-ctl` (v4l-utils), `/usr/bin/python3` (helpers in `bin/`), `udevadm`
+  (systemd), `pkexec` (polkit) for the device-access option
 
 ## Following camera use
 
@@ -40,6 +41,29 @@ back at its firmware home position with the lens open.
 
 The follower runs inside the bar widget, so it stops if the widget is removed
 from the bar.
+
+### Firmware privacy timer
+
+Independent of the follower, the camera itself can close the lens after a
+number of idle seconds (no app streaming), even while the shell is not
+running. Automation → "Camera closes the lens by itself" reads and sets it
+through `bin/privacytimer` (`SET/GET_PRIVACY_TRIGGER_TIME`, `09 02 01 00` /
+`09 02 01 01`, u32 LE seconds, recovered from EMEET STUDIO 2.0.4). Choices are
+the official app's: Never, 10 s, 1 min, 15 min; any other value already on the
+camera shows as an extra choice.
+
+### Device access
+
+emeet-pixyd and the plugin's HID helpers need write access to the camera's
+hidraw node. `udev/70-emeet-pixy.rules` grants it to the logged-in user only
+(`TAG+="uaccess"`). The "Camera HID access" switch at the end of the Position
+tab installs or removes it through `pkexec` (a password dialog), and installing
+also removes a hand-written `/etc/udev/rules.d/99-emeet-pixyd.rules`. By hand:
+
+```bash
+sudo install -m644 udev/70-emeet-pixy.rules /etc/udev/rules.d/
+sudo udevadm control --reload && sudo udevadm trigger -s hidraw
+```
 
 ## Install
 
