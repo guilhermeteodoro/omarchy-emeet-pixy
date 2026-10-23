@@ -63,8 +63,8 @@ color while tracking, and dimmed when the daemon is unreachable. The tooltip
 shows the mode, audio mode and call state.
 
 ## Panel
-Two tabs (Position, Image), switched by click or Left/Right (h/l), under a
-preset bar shown on both; the last tab is kept for the next open:
+Two tabs (Position, Image), switched by click or Left/Right (h/l), with the
+preset bar below them on both; the last tab is kept for the next open:
 
 | Tab      | Section    | Controls                                  | Command                                  |
 |----------|------------|-------------------------------------------|------------------------------------------|
@@ -72,11 +72,21 @@ preset bar shown on both; the last tab is kept for the next open:
 |          |            | Face / Half body / Full body              | `tracking <variant>`                     |
 |          | Audio      | Noise cancel / Live / Original            | `audio nc\|live\|org`                    |
 |          | Automation | Gesture control, Follow camera use        | `toggle-gesture`, `followUsage` setting  |
-|          | PTZ        | Pan (±150), tilt (±90), zoom (100–150)    | `pan`, `tilt`, `zoom` (sent on release)  |
+|          | PTZ        | Pan (±150), tilt (±90), zoom (100–150), Static only | `pan`, `tilt`, `zoom` (sent on release)  |
 |          |            | Center, Sync, Web UI                      | `center`, `sync`                         |
 | Image    | Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`     |
 |          |            | Reset image to defaults                   | one `v4l2-ctl -c` with all defaults      |
 
+### Static position
+
+Pan, tilt, zoom and Center are enabled only in Static: tracking and privacy
+drive the motors themselves. Neither emeet-pixyd nor V4L2 can read where they
+leave the motors (the firmware does not expose its live position, only stored
+preset slots), so the reported values go stale. The widget therefore remembers
+the last position seen in Static (`staticPosition` setting) and, whenever the
+camera comes back to Static from privacy or tracking (panel, right click or
+CLI), moves there through `center`, so the motors, the daemon and the sliders
+agree again.
 ### Presets
 
 A preset is the daemon's PTZ preset extended with the rest of the setup: every

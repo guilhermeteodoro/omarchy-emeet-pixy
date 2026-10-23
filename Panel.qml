@@ -149,7 +149,37 @@ Panel {
       var eq = pair.indexOf("=")
       if (eq > 0) next[pair.slice(0, eq)] = pair.slice(eq + 1)
     })
+    var previous = status.camera
     status = next
+    if (next.camera !== "idle" || ptzProc.running) return
+    if (previous === "privacy" || previous === "tracking") restoreStatic(next)
+    else rememberStatic(next)
+  }
+
+  // Privacy and tracking move the motors behind everyone's back: neither the
+  // daemon nor V4L2 reports where they end up (the firmware does not expose
+  // its live position). Coming back to Static (panel, right click, CLI) goes to
+  // the last position seen in Static, kept across restarts, so the sliders,
+  // the daemon and the motors agree again.
+  readonly property var staticPosition: setting("staticPosition", null)
+
+  function rememberStatic(s) {
+    var p = { pan: Number(s.pan), tilt: Number(s.tilt), zoom: Number(s.zoom) }
+    if (isNaN(p.pan) || isNaN(p.tilt) || isNaN(p.zoom)) return
+    var q = staticPosition
+    if (q && q.pan === p.pan && q.tilt === p.tilt && q.zoom === p.zoom) return
+    setSetting("staticPosition", p)
+  }
+
+  // `center` first: the daemon would skip a move to the position it already
+  // believes in, but the motors are elsewhere.
+  function restoreStatic(s) {
+    var p = staticPosition || { pan: Number(s.pan) || 0, tilt: Number(s.tilt) || 0, zoom: Number(s.zoom) || 100 }
+    ptzProc.command = ["sh", "-c",
+      'PATH="$PATH:$HOME/.nix-profile/bin:$HOME/.local/bin"\n' +
+      '"$0" center && "$0" pan "$1" && "$0" tilt "$2" && "$0" zoom "$3"',
+      command, String(p.pan), String(p.tilt), String(p.zoom)]
+    ptzProc.running = true
   }
 
   function parsePresets(text) {
@@ -285,6 +315,14 @@ Panel {
   // clamping and (in)active flips, so it can wait for a preset script to finish.
   Timer { id: controlsSoon; interval: 1500; onTriggered: root.refreshControls() }
 
+  // Restore/adopt of the Static position; parseStatus skips memorising while
+  // it runs so the in-between position is never stored.
+  Process {
+    id: ptzProc
+    // No autosave: these positions come from the camera, not from the user.
+    onExited: root.refresh()
+  }
+
   FileView {
     id: presetsFile
     path: root.presetsPath
@@ -378,70 +416,7 @@ Panel {
           }
         }
 
-        // Preset bar: on every tab, since every tab edits the current preset.
-        Row {
-          width: parent.width
-          spacing: Style.space(6)
-          Dropdown {
-            width: parent.width - newButton.width - deleteButton.width - parent.spacing * 2
-            showLabel: false
-            value: root.currentPreset
-            options: root.presets
-            fontFamily: root.fontFamily
-            onChanged: function(v) { root.loadPreset(v) }
-          }
-          Action {
-            id: newButton
-            iconText: "\u{F0415}"
-            text: "New"
-            tooltipText: "Save the current setup as a new preset"
-            onClicked: root.naming = !root.naming
-          }
-          Action {
-            id: deleteButton
-            iconText: "\u{F01B4}"
-            tooltipText: "Delete " + root.currentPreset
-            enabled: root.currentPreset !== ""
-            opacity: enabled ? 1.0 : 0.4
-            onClicked: root.deleteCurrent()
-          }
-        }
-        Row {
-          visible: root.naming
-          width: parent.width
-          spacing: Style.space(6)
-          TextField {
-            id: presetName
-            width: parent.width - createButton.width - parent.spacing
-            placeholderText: "New preset name"
-            foreground: root.fg
-            onAccepted: createButton.clicked()
-          }
-          Action {
-            id: createButton
-            iconText: "\u{F0193}"
-            text: "Create"
-            onClicked: {
-              var name = presetName.text.trim()
-              if (name === "") return
-              root.createPreset(name)
-              presetName.text = ""
-              root.naming = false
-            }
-          }
-        }
-        Text {
-          width: parent.width
-          wrapMode: Text.WordWrap
-          textFormat: Text.PlainText
-          text: root.currentPreset !== ""
-            ? "Changes save to \u201C" + root.currentPreset + "\u201D automatically: position, image, audio, gestures."
-            : "No preset selected: changes are not saved."
-          color: root.fg
-          opacity: 0.6
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.caption
-        }
+
         Choice {
           width: parent.width
           value: root.tab
@@ -516,14 +491,45 @@ Panel {
         Section {
           title: "PAN · TILT · ZOOM"
           visible: root.tab === "position"
-          SliderRow { text: "pan"; minimum: -150; maximum: 150; current: Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]); root.noteChange(true) } }
-          SliderRow { text: "tilt"; minimum: -90; maximum: 90; current: Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]); root.noteChange(true) } }
-          SliderRow { text: "zoom"; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.noteChange(true) } }
+          Text {
+            visible: root.camera !== "idle"
+            width: parent.width
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: "Position controls work in Static mode."
+            color: root.fg
+            opacity: 0.6
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+          Column {
+            width: parent.width
+            spacing: Style.space(8)
+            // Tracking and privacy drive the motors themselves.
+            enabled: root.camera === "idle"
+            opacity: enabled ? 1.0 : 0.4
+            SliderRow { text: "\u{F0BB8} pan"; labelWidth: Style.space(70); minimum: -150; maximum: 150; current: Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]); root.noteChange(true) } }
+            SliderRow { text: "\u{F0BBE} tilt"; labelWidth: Style.space(70); minimum: -90; maximum: 90; current: Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]); root.noteChange(true) } }
+            SliderRow { text: "\u{F06ED} zoom"; labelWidth: Style.space(70); minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.noteChange(true) } }
+          }
           Row {
             spacing: Style.space(6)
-            Action { iconText: "\u{F01A4}"; text: "Center"; onClicked: { root.run(["center"]); root.noteChange(true) } }
+            Action { iconText: "\u{F01A4}"; text: "Center"; enabled: root.camera === "idle"; opacity: enabled ? 1.0 : 0.4; onClicked: { root.run(["center"]); root.noteChange(true) } }
             Action { iconText: "\u{F0450}"; text: "Sync"; onClicked: root.run(["sync"]) }
             Action { iconText: "\u{F059F}"; text: "Web UI"; onClicked: { Quickshell.execDetached(["omarchy-launch-browser", root.webUrl]); root.close() } }
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            textFormat: Text.StyledText
+            text: 'Camera control by <a href="https://github.com/LarsArtmann/emeet-pixyd">emeet-pixyd</a>'
+            linkColor: root.fg
+            color: root.fg
+            opacity: 0.6
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            onLinkActivated: function(link) { Quickshell.execDetached(["omarchy-launch-browser", link]); root.close() }
+            HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
           }
         }
 
@@ -594,6 +600,74 @@ Panel {
             text: "Reset image to defaults"
             tooltipText: "Right click a slider to reset just that control"
             onClicked: root.writeControls(Controls.resetArg(root.controls))
+          }
+        }
+
+        // Preset bar: last, on every tab, since every tab edits the current preset.
+        Section {
+          title: "PRESET"
+          Row {
+            width: parent.width
+            spacing: Style.space(6)
+            Dropdown {
+              width: parent.width - newButton.width - deleteButton.width - parent.spacing * 2
+              showLabel: false
+              value: root.currentPreset
+              options: root.presets
+              fontFamily: root.fontFamily
+              onChanged: function(v) { root.loadPreset(v) }
+            }
+            Action {
+              id: newButton
+              iconText: "\u{F0415}"
+              text: "New"
+              tooltipText: "Save the current setup as a new preset"
+              onClicked: root.naming = !root.naming
+            }
+            Action {
+              id: deleteButton
+              iconText: "\u{F01B4}"
+              tooltipText: "Delete " + root.currentPreset
+              enabled: root.currentPreset !== ""
+              opacity: enabled ? 1.0 : 0.4
+              onClicked: root.deleteCurrent()
+            }
+          }
+          Row {
+            visible: root.naming
+            width: parent.width
+            spacing: Style.space(6)
+            TextField {
+              id: presetName
+              width: parent.width - createButton.width - parent.spacing
+              placeholderText: "New preset name"
+              foreground: root.fg
+              onAccepted: createButton.clicked()
+            }
+            Action {
+              id: createButton
+              iconText: "\u{F0193}"
+              text: "Create"
+              onClicked: {
+                var name = presetName.text.trim()
+                if (name === "") return
+                root.createPreset(name)
+                presetName.text = ""
+                root.naming = false
+              }
+            }
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: root.currentPreset !== ""
+              ? "Changes save to \u201C" + root.currentPreset + "\u201D automatically: position, image, audio, gestures."
+              : "No preset selected: changes are not saved."
+            color: root.fg
+            opacity: 0.6
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
           }
         }
       }
