@@ -44,4 +44,27 @@ function resetArg(controls) {
     .join(",")
 }
 
-if (typeof module !== "undefined") module.exports = { parse: parse, label: label, resetArg: resetArg }
+// Image part of a preset: every control the driver currently accepts writes to.
+function snapshot(controls) {
+  var image = {}
+  controls.forEach(function(c) { if (!c.inactive) image[c.name] = c.value })
+  return image
+}
+
+// Splits a saved image map into two v4l2-ctl -c arguments. Auto-mode switches
+// (bools, menus) go first: writing exposure time or focus is rejected until
+// their auto mode is off. Unknown names (another camera) are dropped.
+function applyArgs(image, controls) {
+  var types = {}
+  controls.forEach(function(c) { types[c.name] = c.type })
+  var modes = [], values = []
+  Object.keys(image || {}).forEach(function(name) {
+    var pair = name + "=" + Math.round(Number(image[name]))
+    if (types[name] === "int") values.push(pair)
+    else if (types[name] === "bool" || types[name] === "menu") modes.push(pair)
+  })
+  return { modes: modes.join(","), values: values.join(",") }
+}
+
+if (typeof module !== "undefined")
+  module.exports = { parse: parse, label: label, resetArg: resetArg, snapshot: snapshot, applyArgs: applyArgs }

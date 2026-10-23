@@ -1,6 +1,6 @@
 // node Controls.test.js — fixture is real EMEET PIXY output.
 const assert = require("node:assert/strict")
-const { parse, resetArg } = require("./Controls.js")
+const { parse, resetArg, snapshot, applyArgs } = require("./Controls.js")
 
 const fixture = `
 User Controls
@@ -42,5 +42,15 @@ assert.equal(byName.power_line_frequency.options[1].label, "50 Hz")
 assert.equal(byName.power_line_frequency.value, 2)
 // Reset skips inactive controls (the driver rejects writes to them).
 assert.equal(resetArg(controls), "contrast=128")
+
+
+// Presets skip inactive controls and apply auto-mode switches before values.
+const image = snapshot(controls)
+assert.equal(image.exposure_time_absolute, undefined)
+assert.equal(image.contrast, 74)
+const args = applyArgs({ auto_exposure: 1, exposure_time_absolute: 200, brightness: 90, white_balance_automatic: 0, gone: 5 }, controls)
+assert.equal(args.modes, "auto_exposure=1,white_balance_automatic=0")
+assert.equal(args.values, "exposure_time_absolute=200,brightness=90")
+assert.deepEqual(applyArgs(undefined, controls), { modes: "", values: "" })
 
 console.log("ok")

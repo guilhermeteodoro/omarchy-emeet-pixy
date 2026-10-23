@@ -34,7 +34,7 @@ color while tracking, and dimmed when the daemon is unreachable. The tooltip
 shows the mode, audio mode and call state.
 
 ## Panel
-Three tabs, switched by click or Left/Right (h/l); the last one is kept for the
+Four tabs, switched by click or Left/Right (h/l); the last one is kept for the
 next open:
 
 | Tab      | Section    | Controls                                  | Command                                  |
@@ -45,10 +45,25 @@ next open:
 |          | Automation | Gesture control, Auto mode switches       | `toggle-gesture`, `toggle-auto`          |
 | Position | PTZ        | Pan (±150), tilt (±90), zoom (100–150)    | `pan`, `tilt`, `zoom` (sent on release)  |
 |          |            | Center, Sync, Web UI                      | `center`, `sync`                         |
-|          | Presets    | Click to load, right click to delete      | `preset load`, `preset delete`           |
-|          |            | Name field + Save                         | `preset save <name>`                     |
 | Image    | Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`     |
 |          |            | Reset image to defaults                   | one `v4l2-ctl -c` with all defaults      |
+| Presets  | Presets    | Click to load, right click to delete      | see below                                |
+|          |            | Name field + Save                         | see below                                |
+
+### Presets
+
+A preset is the daemon's PTZ preset extended with the rest of the setup: every
+active image control, the audio mode and gesture control. Camera mode and auto
+mode are left alone, so loading a preset never opens the privacy shutter.
+
+- Save runs `preset save <name>` and writes the extras to
+  `~/.config/omarchy/emeet-pixy-presets.json`.
+- Load runs `preset load`, `audio`, `gesture-on|off`, then two `v4l2-ctl -c`
+  writes: auto-mode switches first (auto exposure, autofocus, auto white
+  balance), then values, because the driver rejects e.g. exposure time while
+  auto exposure is on.
+- Presets created elsewhere (web UI, CLI) have no extras and load position only;
+  the tooltip says which kind a chip is.
 
 The Image section works like [cameractrls](https://github.com/soyersoyer/cameractrls):
 it lists the controls the driver reports (`v4l2-ctl --list-ctrls-menus`)

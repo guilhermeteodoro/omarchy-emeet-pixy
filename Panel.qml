@@ -23,9 +23,13 @@ Panel {
   // Parsed `status`: camera, audio, gesture, pan, tilt, zoom, in_call, auto, device.
   property var status: ({})
   property var presets: []
+  // Everything a preset holds beyond the daemon's pan/tilt/zoom, keyed by
+  // preset name: { image: {control: value}, audio, gesture }.
+  property var presetExtras: ({})
+  readonly property string presetsPath: Quickshell.env("HOME") + "/.config/omarchy/emeet-pixy-presets.json"
   // Panel tab; kept while the shell runs so reopening lands where you left.
   property string tab: "camera"
-  readonly property var tabs: ["camera", "position", "image"]
+  readonly property var tabs: ["camera", "position", "image", "presets"]
   // Parsed `v4l2-ctl --list-ctrls-menus`, see Controls.js.
   property var controls: []
   readonly property string device: status.device || ""
@@ -46,6 +50,50 @@ Panel {
   // where emeet-pixyd is installed, so it is appended here.
   function argv(args) {
     return ["sh", "-c", 'PATH="$PATH:$HOME/.nix-profile/bin:$HOME/.local/bin"; exec "$0" "$@"', command].concat(args)
+  }
+
+  function savePresetExtras(next) {
+    presetExtras = next
+    presetsFile.setText(JSON.stringify({ version: 1, presets: next }, null, 2) + "\n")
+  }
+
+  function savePreset(name) {
+    run(["preset", "save", name])
+    var next = Object.assign({}, presetExtras)
+    next[name] = { image: Controls.snapshot(controls), audio: status.audio || "", gesture: status.gesture === "true" }
+    savePresetExtras(next)
+  }
+
+  function deletePreset(name) {
+    run(["preset", "delete", name])
+    var next = Object.assign({}, presetExtras)
+    delete next[name]
+    savePresetExtras(next)
+  }
+
+  // One sequential script so the image writes land after the daemon has
+  // settled; values travel as positional args, never interpolated.
+  function loadPreset(name) {
+    var extra = presetExtras[name] || {}
+    var image = Controls.applyArgs(extra.image, controls)
+    var gesture = extra.gesture === undefined ? "" : (extra.gesture ? "gesture-on" : "gesture-off")
+    Quickshell.execDetached(["sh", "-c",
+      'PATH="$PATH:$HOME/.nix-profile/bin:$HOME/.local/bin"\n' +
+      '"$0" preset load "$1"\n' +
+      '[ -n "$2" ] && "$0" audio "$2"\n' +
+      '[ -n "$3" ] && "$0" "$3"\n' +
+      '[ -n "$5" ] && v4l2-ctl -d "$4" -c "$5"\n' +
+      '[ -n "$6" ] && v4l2-ctl -d "$4" -c "$6"\n' +
+      'exit 0',
+      command, name, extra.audio || "", gesture, device, image.modes, image.values])
+    refreshSoon.restart()
+    controlsSoon.restart()
+  }
+
+  function presetSummary(name) {
+    var extra = presetExtras[name]
+    if (!extra) return "Position only (saved outside this panel)"
+    return "Position · " + Object.keys(extra.image || {}).length + " image controls · audio " + (extra.audio || "?") + " · gestures " + (extra.gesture ? "on" : "off")
   }
 
   function run(args) {
@@ -117,7 +165,21 @@ Panel {
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.controls = Controls.parse(text) }
   }
 
-  Timer { id: controlsSoon; interval: 400; onTriggered: root.refreshControls() }
+  // The panel already shows writes optimistically; this re-read only catches
+  // clamping and (in)active flips, so it can wait for a preset script to finish.
+  Timer { id: controlsSoon; interval: 1500; onTriggered: root.refreshControls() }
+
+  FileView {
+    id: presetsFile
+    path: root.presetsPath
+    watchChanges: true
+    atomicWrites: true
+    printErrors: false
+    onLoaded: {
+      try { root.presetExtras = JSON.parse(text()).presets || {} } catch (e) { root.presetExtras = {} }
+    }
+    onFileChanged: reload()
+  }
 
   Timer { interval: root.opened ? 2000 : root.refreshIntervalSec * 1000; running: true; repeat: true; onTriggered: root.refresh() }
   Timer { id: refreshSoon; interval: 700; onTriggered: { root.refresh(); if (root.opened) presetsProc.running = true } }
@@ -203,7 +265,8 @@ Panel {
           options: [
             { value: "camera", label: "Camera", icon: "\u{F0100}" },
             { value: "position", label: "Position", icon: "\u{F01A4}" },
-            { value: "image", label: "Image", icon: "\u{F02F1}" }
+            { value: "image", label: "Image", icon: "\u{F02F1}" },
+            { value: "presets", label: "Presets", icon: "\u{F00C0}" }
           ]
           onChanged: function(v) { root.tab = v }
         }
@@ -285,7 +348,7 @@ Panel {
 
         Section {
           title: "PRESETS"
-          visible: root.tab === "position"
+          visible: root.tab === "presets"
           Flow {
             width: parent.width
             spacing: Style.space(6)
@@ -295,9 +358,9 @@ Panel {
                 required property var modelData
                 iconText: "\u{F00C0}"
                 text: String(modelData)
-                tooltipText: "Left click: load · Right click: delete"
-                onClicked: root.run(["preset", "load", String(modelData)])
-                onRightClicked: root.run(["preset", "delete", String(modelData)])
+                tooltipText: root.presetSummary(String(modelData)) + "\nLeft click: load · Right click: delete"
+                onClicked: root.loadPreset(String(modelData))
+                onRightClicked: root.deletePreset(String(modelData))
               }
             }
           }
@@ -307,7 +370,7 @@ Panel {
             TextField {
               id: presetName
               width: parent.width - saveButton.width - parent.spacing
-              placeholderText: "Save current position as…"
+              placeholderText: "Save current setup as…"
               foreground: root.fg
               onAccepted: saveButton.clicked()
             }
@@ -318,10 +381,20 @@ Panel {
               onClicked: {
                 var name = presetName.text.trim()
                 if (name === "") return
-                root.run(["preset", "save", name])
+                root.savePreset(name)
                 presetName.text = ""
               }
             }
+          }
+          Text {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: "A preset saves position, image controls, audio mode and gestures. Camera and auto mode are left as they are."
+            color: root.fg
+            opacity: 0.6
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
           }
         }
 
