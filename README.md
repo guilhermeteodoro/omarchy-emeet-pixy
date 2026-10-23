@@ -1,0 +1,71 @@
+# EMEET PIXY for Omarchy
+
+Omarchy Quattro bar widget for the [EMEET PIXY](https://www.emeet.com) webcam.
+It drives [emeet-pixyd](https://github.com/LarsArtmann/emeet-pixyd) through
+its client CLI, so the daemon stays the single owner of the camera.
+
+## Requirements
+
+- Omarchy 4 (Quattro) shell
+- `emeet-pixyd` running as a user service; the widget calls its client
+  (`emeet-pixy` or `emeet-pixyd <command>`). `~/.nix-profile/bin` and
+  `~/.local/bin` are added to `PATH`, so a Nix profile install works without
+  changes.
+
+## Install
+
+```bash
+omarchy plugin add https://github.com/guilhermeteodoro/omarchy-emeet-pixy.git --enable
+omarchy bar move guilhermeteodoro.emeet-pixy --section right   # optional
+```
+
+Update with `omarchy plugin update guilhermeteodoro.emeet-pixy`.
+
+## Bar button
+
+| Input        | Action                                |
+|--------------|---------------------------------------|
+| Left click   | Open the panel                        |
+| Right click  | `toggle-privacy`                      |
+| Middle click | Open the daemon web UI                |
+
+The icon shows the webcam glyph, crossed out in privacy mode, in the urgent
+color while tracking, and dimmed when the daemon is unreachable. The tooltip
+shows the mode, audio mode and call state.
+
+## Panel
+
+| Section    | Controls                                  | emeet-pixyd command                        |
+|------------|-------------------------------------------|--------------------------------------------|
+| Camera     | Track / Idle / Privacy                    | `track`, `idle`, `privacy`                 |
+|            | Face / Half body / Full body              | `tracking <variant>`                       |
+| Audio      | Noise cancel / Live / Original            | `audio nc\|live\|org`                      |
+| Automation | Gesture control, Auto mode switches       | `toggle-gesture`, `toggle-auto`            |
+| PTZ        | Pan (±150), tilt (±90), zoom (100–150)    | `pan`, `tilt`, `zoom` (sent on release)    |
+|            | Center, Sync, Web UI                      | `center`, `sync`                           |
+| Presets    | Click to load, right click to delete      | `preset load`, `preset delete`             |
+|            | Name field + Save                         | `preset save <name>`                       |
+
+The daemon does not report the tracking variant, so those buttons never show
+as selected. Every action triggers a status refresh. The bar polls `status`
+every `refreshIntervalSec` seconds, and every 2 seconds while the panel is open.
+
+## Settings
+
+Edit the entry in `~/.config/omarchy/shell.json` or use the bar settings UI:
+
+| Key                  | Default                 | Meaning                                   |
+|----------------------|-------------------------|-------------------------------------------|
+| `command`            | `emeet-pixy`            | Client binary name or absolute path       |
+| `refreshIntervalSec` | `5`                     | Poll interval while the panel is closed   |
+| `webUrl`             | `http://127.0.0.1:8090` | Daemon web UI (`EMEET_PIXYD_WEB_ADDR`)    |
+
+## Keybindings
+
+The widget needs no IPC: bind the CLI directly in `~/.config/hypr/bindings.lua`
+and the bar picks the change up on its next poll, for example
+`emeet-pixy toggle-privacy`.
+
+## License
+
+MIT
