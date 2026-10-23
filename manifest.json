@@ -29,7 +29,8 @@
       "refreshIntervalSec": 5,
       "webUrl": "http://127.0.0.1:8090",
       "followUsage": true,
-      "preset": ""
+      "preset": "",
+      "startPrivacy": true
     },
     "schema": [
       {
@@ -61,6 +62,13 @@
         "type": "boolean",
         "label": "Follow camera use",
         "description": "Track and switch to noise cancel ~4s after an app uses the camera or microphone; privacy ~10s after it stops. Turns emeet-pixyd's own auto mode off.",
+        "defaultValue": true
+      },
+      {
+        "key": "startPrivacy",
+        "type": "boolean",
+        "label": "Start in Privacy mode",
+        "description": "Close the lens at login and whenever the camera is plugged in (it powers up with the lens open). Needs Follow camera use.",
         "defaultValue": true
       },
       {

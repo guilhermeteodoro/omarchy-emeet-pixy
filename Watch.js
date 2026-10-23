@@ -9,20 +9,22 @@ function initial() {
   return { primed: false, state: "", busy: 0, idle: 0 }
 }
 
-// After a (re)connect the camera is back at its firmware home position, so
-// forget what was applied and let the next polls command it again.
-function reconnected() {
-  return { primed: true, state: "", busy: 0, idle: 0 }
+// After a (re)connect the camera is back at its firmware home position with
+// the lens open. With startPrivacy the next idle polls close it; without, the
+// lens is left alone until a call has come and gone.
+function reconnected(startPrivacy) {
+  return { primed: true, state: startPrivacy ? "" : "privacy", busy: 0, idle: 0 }
 }
 
 // One poll. Returns { next, action } with action "", "track" or "privacy".
 // The first poll adopts the camera's synced state instead of commanding it: a
-// shell restart mid-call with the lens open never switches the camera, while
-// an idle start still gets privacy and a privacy start with an app streaming
-// still opens the lens.
-function step(s, inUse, camera) {
+// shell restart mid-call with the lens open never switches the camera, a
+// privacy start with an app streaming still opens the lens, and an idle start
+// with the lens open gets privacy only with startPrivacy (login / boot).
+function step(s, inUse, camera, startPrivacy) {
   if (!s.primed) {
-    var state = camera === "privacy" ? "privacy" : (inUse ? "tracking" : "")
+    var state = camera === "privacy" || !startPrivacy ? "privacy" : (inUse ? "tracking" : "")
+    if (camera !== "privacy" && inUse) state = "tracking"
     return { next: { primed: true, state: state, busy: 0, idle: 0 }, action: "" }
   }
   var busy = inUse ? s.busy + 1 : 0

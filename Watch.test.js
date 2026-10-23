@@ -2,10 +2,10 @@
 const assert = require("node:assert/strict")
 const W = require("./Watch.js")
 
-function run(s, polls, camera = "tracking") {
+function run(s, polls, camera = "tracking", startPrivacy = true) {
   const actions = []
   for (const inUse of polls) {
-    const r = W.step(s, inUse, camera)
+    const r = W.step(s, inUse, camera, startPrivacy)
     s = r.next
     if (r.action) actions.push(r.action)
   }
@@ -34,7 +34,15 @@ assert.deepEqual(run(W.initial(), call), ["privacy", "track", "privacy"])
 assert.deepEqual(run(W.initial(), [false, false, false, false, false, false, true, false, false]), ["privacy"])
 
 // Reconnect while busy re-tracks; while idle re-applies privacy.
-assert.deepEqual(run(W.reconnected(), [true, true]), ["track"])
-assert.deepEqual(run(W.reconnected(), Array(5).fill(false)), ["privacy"])
+assert.deepEqual(run(W.reconnected(true), [true, true]), ["track"])
+assert.deepEqual(run(W.reconnected(true), Array(5).fill(false)), ["privacy"])
+
+// Start in Privacy mode off: an idle start or reconnect leaves the lens alone...
+assert.deepEqual(run(W.initial(), Array(12).fill(false), "idle", false), [])
+assert.deepEqual(run(W.reconnected(false), Array(12).fill(false), "idle", false), [])
+// ...but a call still tracks and its end still closes the lens.
+assert.deepEqual(run(W.initial(), [false, true, true, ...Array(5).fill(false)], "idle", false), ["track", "privacy"])
+// A shell restart mid-call is unaffected by the option.
+assert.deepEqual(run(W.initial(), [true, true, true], "tracking", false), [])
 
 console.log("ok")

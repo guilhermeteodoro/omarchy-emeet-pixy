@@ -20,6 +20,9 @@ Panel {
   readonly property int refreshIntervalSec: Math.max(1, Number(setting("refreshIntervalSec", 5)))
   readonly property string webUrl: String(setting("webUrl", "http://127.0.0.1:8090"))
   readonly property bool followUsage: setting("followUsage", true) === true
+  // Close the lens at login and when the camera is plugged in (it powers up
+  // at its firmware home position with the lens open).
+  readonly property bool startPrivacy: setting("startPrivacy", true) === true
   // Current preset: the last one picked. Panel changes save into it.
   readonly property string currentPreset: String(setting("preset", ""))
 
@@ -166,38 +169,11 @@ Panel {
   //   agree again before anyone moves a slider.
   // Privacy -> Static returns to the last Static position, kept across restarts.
   property string hidraw: ""
-  // udev/70-emeet-pixy.rules grants the HID node to the seat user; live
-  // position and the privacy timer need it, and so does emeet-pixyd.
+  // install.sh grants the HID node to the logged-in user; live position, the
+  // privacy timer and emeet-pixyd's HID controls need it. Missing access means
+  // setup was skipped, so the panel says so instead of offering an option.
   property bool hidrawAccess: true
-  property bool udevInstalled: false
-  property bool legacyRule: false
-  readonly property string udevTarget: "/etc/udev/rules.d/70-emeet-pixy.rules"
-  readonly property string legacyTarget: "/etc/udev/rules.d/99-emeet-pixyd.rules"
-  // What the access button does, phrased as the user's intent.
-  readonly property string accessAction: udevInstalled ? "Remove access rule"
-    : (legacyRule ? "Replace old rule" : "Install access rule")
-  readonly property string accessStatus: {
-    if (udevInstalled) return hidrawAccess
-      ? "Plugin rule installed: only you (the logged-in user) can control " + hidraw + "."
-      : "Plugin rule installed, but " + hidraw + " is still not writable: replug the camera."
-    if (legacyRule) return hidrawAccess
-      ? "Working through the old 99-emeet-pixyd.rules, which lets every account on this machine control the camera."
-      : "Old 99-emeet-pixyd.rules present, but " + hidraw + " is not writable."
-    return hidrawAccess
-      ? "Working through a rule this plugin does not know."
-      : "No access to " + hidraw + ": live position, the privacy timer and emeet-pixyd's controls do not work."
-  }
-  readonly property string udevRule: Qt.resolvedUrl("udev/70-emeet-pixy.rules").toString().replace(/^file:\/\//, "")
-
-  // pkexec: the panel has no terminal for a sudo prompt. Installing also drops
-  // the hand-written world-writable rule this one replaces.
-  function setUdevRule(install) {
-    udevProc.command = ["pkexec", "sh", "-c", install
-      ? 'install -m644 "$1" "$2" && rm -f "$3" && udevadm control --reload && udevadm trigger -s hidraw'
-      : 'rm -f "$2" && udevadm control --reload && udevadm trigger -s hidraw',
-      "sh", udevRule, udevTarget, legacyTarget]
-    udevProc.running = true
-  }
+  readonly property string setupCommand: "'" + Qt.resolvedUrl("install.sh").toString().replace(/^file:\/\//, "") + "'"
 
   function checkAccess() {
     if (!accessProc.running) accessProc.running = true
@@ -311,7 +287,7 @@ Panel {
   function pollUse(videoBusy) {
     var wasPrimed = watch.primed
     var inUse = videoBusy || capturing
-    var r = Watch.step(watch, inUse, camera)
+    var r = Watch.step(watch, inUse, camera, startPrivacy)
     watch = r.next
     if (!wasPrimed && !inUse) applyCurrentImage()
     if (r.action === "track") {
@@ -345,7 +321,7 @@ Panel {
 
   function reconnect() {
     run(["sync"])
-    watch = Watch.reconnected()
+    watch = Watch.reconnected(startPrivacy)
     applyCurrentImage()
   }
 
@@ -428,24 +404,12 @@ Panel {
 
   Process {
     id: accessProc
-    command: ["sh", "-c", 'test -e "$1"; a=$?; test -e "$2"; b=$?; test -w "$3"; echo "$a $b $?"', "sh", root.udevTarget, root.legacyTarget, root.hidraw]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: {
-        var v = String(text).trim().split(" ")
-        root.udevInstalled = v[0] === "0"
-        root.legacyRule = v[1] === "0"
-        root.hidrawAccess = v[2] === "0"
-      }
+    command: ["test", "-w", root.hidraw]
+    onExited: function(code) {
+      root.hidrawAccess = code === 0
+      if (root.hidrawAccess) root.privacyTimerCall()
     }
   }
-
-  // udev applies the ACL asynchronously after the trigger.
-  Process {
-    id: udevProc
-    onExited: accessSoon.restart()
-  }
-  Timer { id: accessSoon; interval: 1500; onTriggered: root.checkAccess() }
 
   Process {
     id: motorProc
@@ -566,6 +530,27 @@ Panel {
         }
 
         Section {
+          title: "SETUP INCOMPLETE"
+          visible: root.hidraw !== "" && !root.hidrawAccess
+          Text {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: "This plugin can't reach the camera's controls, so live position and the privacy timer are off. Run the plugin's setup once in a terminal (it asks for your password), then replug the camera."
+            color: root.fg
+            opacity: 0.8
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+          Action {
+            iconText: "\u{F018F}"
+            text: "Copy setup command"
+            tooltipText: root.setupCommand
+            onClicked: Quickshell.execDetached(["wl-copy", root.setupCommand])
+          }
+        }
+
+        Section {
           title: "CAMERA"
           visible: root.tab === "position"
           Choice {
@@ -623,6 +608,17 @@ Panel {
             foreground: root.fg
             fontFamily: root.fontFamily
             onClicked: root.setSetting("followUsage", !root.followUsage)
+          }
+          Toggle {
+            width: parent.width
+            label: "Start in Privacy mode"
+            description: "Close the lens at login and whenever the camera is plugged in"
+            checked: root.startPrivacy
+            enabled: root.followUsage
+            opacity: enabled ? 1.0 : 0.4
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            onClicked: root.setSetting("startPrivacy", !root.startPrivacy)
           }
           Text {
             visible: root.privacyTimer >= 0
@@ -754,30 +750,6 @@ Panel {
             text: "Reset image to defaults"
             tooltipText: "Right click a slider to reset just that control"
             onClicked: root.writeControls(Controls.resetArg(root.controls))
-          }
-        }
-
-        Section {
-          title: "DEVICE ACCESS"
-          visible: root.tab === "position" && root.hidraw !== ""
-          Text {
-            width: parent.width
-            wrapMode: Text.WordWrap
-            textFormat: Text.PlainText
-            text: root.accessStatus
-            color: root.fg
-            opacity: 0.8
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
-          }
-          Action {
-            iconText: root.udevInstalled ? "\u{F01B4}" : "\u{F0565}"
-            text: udevProc.running ? "Waiting for password…" : root.accessAction
-            enabled: !udevProc.running
-            tooltipText: root.udevInstalled
-              ? "Deletes " + root.udevTarget + ". The camera's HID controls stop working for your user."
-              : "Installs " + root.udevTarget + (root.legacyRule ? " and deletes " + root.legacyTarget : "") + ". Asks for your password."
-            onClicked: root.setUdevRule(!root.udevInstalled)
           }
         }
 
