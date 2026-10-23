@@ -58,6 +58,9 @@ auto mode governs (exposure time under aperture priority, focus under
 continuous autofocus) is dimmed until you switch that auto mode off. Right click
 a slider to reset that control. The parser test runs with `node Controls.test.js`.
 
+Editing the plugin: the shell logs "reloading" on save but keeps the cached
+`Panel.qml`; run `omarchy restart shell` to load changes.
+
 The daemon does not report the tracking variant, so those buttons never show
 as selected. Every action triggers a status refresh. The bar polls `status`
 every `refreshIntervalSec` seconds, and every 2 seconds while the panel is open.

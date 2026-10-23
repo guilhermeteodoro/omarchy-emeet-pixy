@@ -321,9 +321,9 @@ Panel {
                 visible: ctl.c.type === "int"
                 text: ctl.c.label
                 labelWidth: Style.space(150)
-                minimum: ctl.c.min
-                maximum: ctl.c.max
-                step: ctl.c.step
+                minimum: ctl.c.min || 0
+                maximum: ctl.c.max || 0
+                step: ctl.c.step || 1
                 current: ctl.c.value
                 onCommitted: function(v) { root.setControl(ctl.c.name, v) }
                 onReset: root.setControl(ctl.c.name, ctl.c.default)
