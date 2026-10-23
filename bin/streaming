@@ -1,0 +1,24 @@
+#!/usr/bin/python3
+# Exit 0 if some process is streaming from the V4L2 device in argv[1], 1 if
+# not, 2 on error. Merely holding the device open does not count: browsers
+# keep it open while idle, so `fuser` reports false "in use".
+#
+# VIDIOC_REQBUFS with count=0 is a no-op for a free queue and fails with EBUSY
+# while another file handle owns the streaming buffers. No frames are captured.
+# Absolute /usr/bin/python3: mise's python shim may shadow it on PATH.
+import errno, fcntl, os, struct, sys
+
+VIDIOC_REQBUFS = 0xC0145608  # _IOWR('V', 8, struct v4l2_requestbuffers)
+CAPTURE, MMAP = 1, 1
+
+try:
+    fd = os.open(sys.argv[1], os.O_RDWR | os.O_NONBLOCK)
+except OSError:
+    sys.exit(2)
+try:
+    fcntl.ioctl(fd, VIDIOC_REQBUFS, bytearray(struct.pack("IIII4x", 0, CAPTURE, MMAP, 0)))
+    sys.exit(1)
+except OSError as e:
+    sys.exit(0 if e.errno == errno.EBUSY else 2)
+finally:
+    os.close(fd)

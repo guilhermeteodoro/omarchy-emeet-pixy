@@ -1,16 +1,45 @@
 # EMEET PIXY for Omarchy
 
-Omarchy Quattro bar widget for the [EMEET PIXY](https://www.emeet.com) webcam.
-It drives [emeet-pixyd](https://github.com/LarsArtmann/emeet-pixyd) through
-its client CLI, so the daemon stays the single owner of the camera.
+Omarchy Quattro bar widget for the [EMEET PIXY](https://www.emeet.com) webcam,
+meant as the only thing besides the daemon you need for it. It drives
+[emeet-pixyd](https://github.com/LarsArtmann/emeet-pixyd) through its client
+CLI, edits image controls through V4L2 (replacing cameractrls), follows camera
+use (replacing a watcher service) and restores a preset when the camera
+connects (replacing cameractrlsd and a privacy-on-connect udev hook).
 
 ## Requirements
 
 - Omarchy 4 (Quattro) shell
-- `emeet-pixyd` running as a user service; the widget calls its client
-  (`emeet-pixy` or `emeet-pixyd <command>`). `~/.nix-profile/bin` and
-  `~/.local/bin` are added to `PATH`, so a Nix profile install works without
-  changes.
+- `emeet-pixyd` enabled as a user service (`systemctl --user enable --now
+  emeet-pixyd`); the widget calls its client (`emeet-pixy` or
+  `emeet-pixyd <command>`). `~/.nix-profile/bin` and `~/.local/bin` are added
+  to `PATH`, so a Nix profile install works without changes.
+- `v4l2-ctl` (v4l-utils), `/usr/bin/python3` (streaming probe), `udevadm` (systemd)
+
+## Following camera use
+
+With `followUsage` on (default), every 2 seconds the widget checks whether any
+process is *streaming* from the camera (`bin/streaming`: `VIDIOC_REQBUFS`
+returns `EBUSY` while another process owns the stream; just holding the device
+open, as browsers do, does not count) or any app records audio (PipeWire
+capture streams):
+
+- in use for ~4s: `track` plus the current preset's audio mode (`nc` without one);
+- idle for ~10s: `privacy`.
+
+emeet-pixyd's own auto mode is switched off so the two never fight. At startup
+the widget runs `sync` and the first poll adopts the camera's real state:
+restarting the shell mid-call with the lens open never switches it, an idle
+start still closes the lens, and a camera left in privacy while an app streams
+gets opened.
+
+When the camera connects (`udevadm monitor`, plus once at startup when it is
+idle), the widget runs `sync`, restores the image controls of the current
+preset, and lets the follower re-apply track or privacy, since the camera comes
+back at its firmware home position with the lens open.
+
+The follower runs inside the bar widget, so it stops if the widget is removed
+from the bar.
 
 ## Install
 
@@ -34,21 +63,19 @@ color while tracking, and dimmed when the daemon is unreachable. The tooltip
 shows the mode, audio mode and call state.
 
 ## Panel
-Four tabs, switched by click or Left/Right (h/l); the last one is kept for the
-next open:
+Two tabs (Position, Image), switched by click or Left/Right (h/l), under a
+preset bar shown on both; the last tab is kept for the next open:
 
 | Tab      | Section    | Controls                                  | Command                                  |
 |----------|------------|-------------------------------------------|------------------------------------------|
-| Camera   | Camera     | Track / Static / Privacy                  | `track`, `idle`, `privacy`               |
+| Position | Camera     | Track / Static / Privacy                  | `track`, `idle`, `privacy`               |
 |          |            | Face / Half body / Full body              | `tracking <variant>`                     |
 |          | Audio      | Noise cancel / Live / Original            | `audio nc\|live\|org`                    |
-|          | Automation | Gesture control, Auto mode switches       | `toggle-gesture`, `toggle-auto`          |
-| Position | PTZ        | Pan (±150), tilt (±90), zoom (100–150)    | `pan`, `tilt`, `zoom` (sent on release)  |
+|          | Automation | Gesture control, Follow camera use        | `toggle-gesture`, `followUsage` setting  |
+|          | PTZ        | Pan (±150), tilt (±90), zoom (100–150)    | `pan`, `tilt`, `zoom` (sent on release)  |
 |          |            | Center, Sync, Web UI                      | `center`, `sync`                         |
 | Image    | Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`     |
 |          |            | Reset image to defaults                   | one `v4l2-ctl -c` with all defaults      |
-| Presets  | Presets    | Click to load, right click to delete      | see below                                |
-|          |            | Name field + Save                         | see below                                |
 
 ### Presets
 
@@ -56,14 +83,24 @@ A preset is the daemon's PTZ preset extended with the rest of the setup: every
 active image control, the audio mode and gesture control. Camera mode and auto
 mode are left alone, so loading a preset never opens the privacy shutter.
 
-- Save runs `preset save <name>` and writes the extras to
+- **Current preset**: the one last picked in the preset bar, stored as the
+  `preset` setting, so it survives restarts. Picking another loads it and makes
+  it current.
+- **Auto-save**: every change made in the panel (image controls, reset, audio,
+  gestures, pan/tilt/zoom, Center) is saved into the current preset ~2.5s
+  later, after the values are read back from the camera. Position is saved only
+  when the panel moved the motors, since tracking moves them on its own.
+  Changes made outside the panel (CLI, web UI) are not saved.
+- **New** saves the current setup under a new name and makes it current;
+  the trash button deletes the current preset.
+- Storage: `preset save/load/delete` in emeet-pixyd for position, the rest in
   `~/.config/omarchy/emeet-pixy-presets.json`.
-- Load runs `preset load`, `audio`, `gesture-on|off`, then two `v4l2-ctl -c`
+- Loading runs `preset load`, `audio`, `gesture-on|off`, then two `v4l2-ctl -c`
   writes: auto-mode switches first (auto exposure, autofocus, auto white
   balance), then values, because the driver rejects e.g. exposure time while
   auto exposure is on.
-- Presets created elsewhere (web UI, CLI) have no extras and load position only;
-  the tooltip says which kind a chip is.
+- Presets created elsewhere (web UI, CLI) start with position only and gain the
+  rest on their first auto-save.
 
 The Image section works like [cameractrls](https://github.com/soyersoyer/cameractrls):
 it lists the controls the driver reports (`v4l2-ctl --list-ctrls-menus`)
@@ -94,6 +131,8 @@ Edit the entry in `~/.config/omarchy/shell.json` or use the bar settings UI:
 | `command`            | `emeet-pixy`            | Client binary name or absolute path       |
 | `refreshIntervalSec` | `5`                     | Poll interval while the panel is closed   |
 | `webUrl`             | `http://127.0.0.1:8090` | Daemon web UI (`EMEET_PIXYD_WEB_ADDR`)    |
+| `followUsage`        | `true`                  | Follow camera use (panel: Position tab)   |
+| `preset`             | `""`                    | Current preset (preset bar)               |
 
 ## Keybindings
 

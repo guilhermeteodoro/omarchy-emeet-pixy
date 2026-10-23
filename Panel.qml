@@ -2,13 +2,16 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
+import Quickshell.Services.Pipewire
 import qs.Commons
 import qs.Ui
 import "Controls.js" as Controls
+import "Watch.js" as Watch
 
-// Bar button + popup for the EMEET PIXY. Camera actions are emeet-pixyd client
-// calls; image controls (brightness, exposure, …) go straight to V4L2 with
-// v4l2-ctl, like cameractrls does. The panel only renders what they report.
+// Bar button + popup for the EMEET PIXY, and the one place that manages it:
+// camera actions are emeet-pixyd client calls, image controls go straight to
+// V4L2 with v4l2-ctl (like cameractrls), and the widget follows camera use
+// (Watch.js) and restores a preset whenever the camera connects.
 Panel {
   id: root
   moduleName: "guilhermeteodoro.emeet-pixy"
@@ -16,6 +19,9 @@ Panel {
   readonly property string command: String(setting("command", "emeet-pixy"))
   readonly property int refreshIntervalSec: Math.max(1, Number(setting("refreshIntervalSec", 5)))
   readonly property string webUrl: String(setting("webUrl", "http://127.0.0.1:8090"))
+  readonly property bool followUsage: setting("followUsage", true) === true
+  // Current preset: the last one picked. Panel changes save into it.
+  readonly property string currentPreset: String(setting("preset", ""))
 
   readonly property color fg: bar ? bar.foreground : Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
@@ -28,14 +34,26 @@ Panel {
   property var presetExtras: ({})
   readonly property string presetsPath: Quickshell.env("HOME") + "/.config/omarchy/emeet-pixy-presets.json"
   // Panel tab; kept while the shell runs so reopening lands where you left.
-  property string tab: "camera"
-  readonly property var tabs: ["camera", "position", "image", "presets"]
+  property string tab: "position"
+  readonly property var tabs: ["position", "image"]
+  property bool naming: false
   // Parsed `v4l2-ctl --list-ctrls-menus`, see Controls.js.
   property var controls: []
   readonly property string device: status.device || ""
   readonly property bool online: status.camera !== undefined
   readonly property string camera: status.camera || ""
   readonly property bool inCall: status.in_call === "yes"
+
+  property var watch: Watch.initial()
+  property bool connectPending: false
+  // Any app recording audio counts as use, so an audio-only call keeps the
+  // lens state too (same rule as the old emeet-watch service).
+  readonly property bool capturing: {
+    var nodes = Pipewire.nodes ? Pipewire.nodes.values : []
+    for (var i = 0; i < nodes.length; i++)
+      if (nodes[i] && nodes[i].isStream && nodes[i].isSink === false) return true
+    return false
+  }
 
   function cameraIcon() {
     return camera === "privacy" || !online ? "\u{F1737}" : "\u{F05A0}"
@@ -57,23 +75,49 @@ Panel {
     presetsFile.setText(JSON.stringify({ version: 1, presets: next }, null, 2) + "\n")
   }
 
-  function savePreset(name) {
-    run(["preset", "save", name])
+  // Writes the live setup into the current preset. PTZ goes to the daemon's
+  // preset only when the panel moved the motors: during tracking the position
+  // drifts on its own and is not a setting.
+  function saveCurrent(withPosition) {
+    if (currentPreset === "") return
+    if (withPosition) run(["preset", "save", currentPreset])
     var next = Object.assign({}, presetExtras)
-    next[name] = { image: Controls.snapshot(controls), audio: status.audio || "", gesture: status.gesture === "true" }
+    var image = controls.length > 0 ? Controls.snapshot(controls) : (presetExtras[currentPreset] || {}).image
+    next[currentPreset] = { image: image || {}, audio: status.audio || "", gesture: status.gesture === "true" }
     savePresetExtras(next)
   }
 
-  function deletePreset(name) {
-    run(["preset", "delete", name])
-    var next = Object.assign({}, presetExtras)
-    delete next[name]
-    savePresetExtras(next)
+  // Every setting change made in the panel lands here. The save waits for the
+  // status and control re-reads so it stores what the camera actually took.
+  property bool positionDirty: false
+  function noteChange(position) {
+    if (position) positionDirty = true
+    autosave.restart()
   }
 
-  // One sequential script so the image writes land after the daemon has
-  // settled; values travel as positional args, never interpolated.
+  function createPreset(name) {
+    setSetting("preset", name)
+    saveCurrent(true)
+    presetsSoon.restart()
+  }
+
+  function deleteCurrent() {
+    if (currentPreset === "") return
+    run(["preset", "delete", currentPreset])
+    var next = Object.assign({}, presetExtras)
+    delete next[currentPreset]
+    savePresetExtras(next)
+    setSetting("preset", "")
+    presetsSoon.restart()
+  }
+
+  // Loading makes it the current preset. One sequential script so the image
+  // writes land after the daemon has settled; values travel as positional
+  // args, never interpolated.
   function loadPreset(name) {
+    autosave.stop()
+    positionDirty = false
+    setSetting("preset", name)
     var extra = presetExtras[name] || {}
     var image = Controls.applyArgs(extra.image, controls)
     var gesture = extra.gesture === undefined ? "" : (extra.gesture ? "gesture-on" : "gesture-off")
@@ -88,12 +132,6 @@ Panel {
       command, name, extra.audio || "", gesture, device, image.modes, image.values])
     refreshSoon.restart()
     controlsSoon.restart()
-  }
-
-  function presetSummary(name) {
-    var extra = presetExtras[name]
-    if (!extra) return "Position only (saved outside this panel)"
-    return "Position · " + Object.keys(extra.image || {}).length + " image controls · audio " + (extra.audio || "?") + " · gestures " + (extra.gesture ? "on" : "off")
   }
 
   function run(args) {
@@ -140,12 +178,66 @@ Panel {
     if (device === "" || arg === "") return
     Quickshell.execDetached(["v4l2-ctl", "-d", device, "-c", arg])
     controlsSoon.restart()
+    noteChange(false)
   }
+
+  // Persists one key of this widget's shell.json entry.
+  function setSetting(key, value) {
+    var next = Object.assign({}, settings)
+    next[key] = value
+    settings = next
+    if (bar && bar.shell && bar.shell.updateEntryInline) bar.shell.updateEntryInline(moduleName, next)
+  }
+
+  function pollUse(videoBusy) {
+    var wasPrimed = watch.primed
+    var inUse = videoBusy || capturing
+    var r = Watch.step(watch, inUse, camera)
+    watch = r.next
+    if (!wasPrimed && !inUse) applyCurrentImage()
+    if (r.action === "track") {
+      var extra = presetExtras[currentPreset]
+      run(["track"])
+      run(["audio", extra && extra.audio ? extra.audio : "nc"])
+    } else if (r.action === "privacy") {
+      run(["privacy"])
+    }
+  }
+
+  // Re-read the controls first: applyArgs needs their types to order writes.
+  function applyCurrentImage() {
+    if (!presetExtras[currentPreset]) return
+    connectPending = true
+    if (!controlsProc.running) controlsProc.running = true
+  }
+
+  function onControlsRead(text) {
+    controls = Controls.parse(text)
+    if (!connectPending) return
+    connectPending = false
+    var extra = presetExtras[currentPreset]
+    if (!extra) return
+    var image = Controls.applyArgs(extra.image, controls)
+    Quickshell.execDetached(["sh", "-c",
+      '[ -n "$1" ] && v4l2-ctl -d "$0" -c "$1"\n[ -n "$2" ] && v4l2-ctl -d "$0" -c "$2"\nexit 0',
+      device, image.modes, image.values])
+    controlsSoon.restart()
+  }
+
+  function reconnect() {
+    run(["sync"])
+    watch = Watch.reconnected()
+    applyCurrentImage()
+  }
+
+  onFollowUsageChanged: if (followUsage) run(["auto-off"])
 
   onOpenedChanged: if (opened) { refresh(); presetsProc.running = true; refreshControls() }
   onDeviceChanged: if (opened) refreshControls()
   onCommandChanged: refresh()
-  Component.onCompleted: refresh()
+  // sync first: the watcher's first poll adopts the camera state, so it must
+  // be the hardware's, not whatever the daemon last believed.
+  Component.onCompleted: { if (followUsage) { run(["auto-off"]); run(["sync"]) } refresh() }
 
   Process {
     id: statusProc
@@ -162,8 +254,32 @@ Panel {
   Process {
     id: controlsProc
     command: ["v4l2-ctl", "-d", root.device, "--list-ctrls-menus"]
-    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.controls = Controls.parse(text) }
+    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.onControlsRead(text) }
   }
+
+  Process {
+    id: useProc
+    command: [Qt.resolvedUrl("bin/streaming").toString().replace(/^file:\/\//, ""), root.device]
+    onExited: function(exitCode) { root.pollUse(exitCode === 0) }
+  }
+
+  Timer {
+    interval: 2000
+    running: root.followUsage && root.device !== ""
+    repeat: true
+    onTriggered: if (!useProc.running) useProc.running = true
+  }
+
+  // Camera (re)connects: the daemon re-probes on its own; give it a moment,
+  // then reconcile. The PIXY adds several video nodes, hence the debounce.
+  Process {
+    running: true
+    command: ["udevadm", "monitor", "--udev", "--subsystem-match=video4linux"]
+    stdout: SplitParser {
+      onRead: function(line) { if (/\sadd\s/.test(line)) reconnectSoon.restart() }
+    }
+  }
+  Timer { id: reconnectSoon; interval: 3000; onTriggered: root.reconnect() }
 
   // The panel already shows writes optimistically; this re-read only catches
   // clamping and (in)active flips, so it can wait for a preset script to finish.
@@ -183,6 +299,9 @@ Panel {
 
   Timer { interval: root.opened ? 2000 : root.refreshIntervalSec * 1000; running: true; repeat: true; onTriggered: root.refresh() }
   Timer { id: refreshSoon; interval: 700; onTriggered: { root.refresh(); if (root.opened) presetsProc.running = true } }
+  // Fires after refreshSoon and controlsSoon, so it saves re-read values.
+  Timer { id: autosave; interval: 2500; onTriggered: { root.saveCurrent(root.positionDirty); root.positionDirty = false } }
+  Timer { id: presetsSoon; interval: 1200; onTriggered: presetsProc.running = true }
 
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
@@ -194,7 +313,7 @@ Panel {
     text: root.cameraIcon()
     active: root.camera === "tracking"
     dimmed: !root.online
-    tooltipText: "EMEET PIXY: " + root.summary()
+    tooltipText: "EMEET PIXY: " + root.summary() + (root.currentPreset !== "" ? "\nPreset: " + root.currentPreset : "")
     onPressed: function(b) {
       if (b === Qt.RightButton) root.run(["toggle-privacy"])
       else if (b === Qt.MiddleButton) Quickshell.execDetached(["omarchy-launch-browser", root.webUrl])
@@ -259,21 +378,83 @@ Panel {
           }
         }
 
+        // Preset bar: on every tab, since every tab edits the current preset.
+        Row {
+          width: parent.width
+          spacing: Style.space(6)
+          Dropdown {
+            width: parent.width - newButton.width - deleteButton.width - parent.spacing * 2
+            showLabel: false
+            value: root.currentPreset
+            options: root.presets
+            fontFamily: root.fontFamily
+            onChanged: function(v) { root.loadPreset(v) }
+          }
+          Action {
+            id: newButton
+            iconText: "\u{F0415}"
+            text: "New"
+            tooltipText: "Save the current setup as a new preset"
+            onClicked: root.naming = !root.naming
+          }
+          Action {
+            id: deleteButton
+            iconText: "\u{F01B4}"
+            tooltipText: "Delete " + root.currentPreset
+            enabled: root.currentPreset !== ""
+            opacity: enabled ? 1.0 : 0.4
+            onClicked: root.deleteCurrent()
+          }
+        }
+        Row {
+          visible: root.naming
+          width: parent.width
+          spacing: Style.space(6)
+          TextField {
+            id: presetName
+            width: parent.width - createButton.width - parent.spacing
+            placeholderText: "New preset name"
+            foreground: root.fg
+            onAccepted: createButton.clicked()
+          }
+          Action {
+            id: createButton
+            iconText: "\u{F0193}"
+            text: "Create"
+            onClicked: {
+              var name = presetName.text.trim()
+              if (name === "") return
+              root.createPreset(name)
+              presetName.text = ""
+              root.naming = false
+            }
+          }
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.WordWrap
+          textFormat: Text.PlainText
+          text: root.currentPreset !== ""
+            ? "Changes save to \u201C" + root.currentPreset + "\u201D automatically: position, image, audio, gestures."
+            : "No preset selected: changes are not saved."
+          color: root.fg
+          opacity: 0.6
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+        }
         Choice {
           width: parent.width
           value: root.tab
           options: [
-            { value: "camera", label: "Camera", icon: "\u{F0100}" },
-            { value: "position", label: "Position", icon: "\u{F01A4}" },
-            { value: "image", label: "Image", icon: "\u{F02F1}" },
-            { value: "presets", label: "Presets", icon: "\u{F00C0}" }
+            { value: "position", label: "Position", icon: "\u{F0100}" },
+            { value: "image", label: "Image", icon: "\u{F02F1}" }
           ]
           onChanged: function(v) { root.tab = v }
         }
 
         Section {
           title: "CAMERA"
-          visible: root.tab === "camera"
+          visible: root.tab === "position"
           Choice {
             value: root.camera
             options: [
@@ -298,7 +479,7 @@ Panel {
 
         Section {
           title: "AUDIO"
-          visible: root.tab === "camera"
+          visible: root.tab === "position"
           Choice {
             value: root.status.audio || ""
             options: [
@@ -306,95 +487,43 @@ Panel {
               { value: "live", label: "Live" },
               { value: "org", label: "Original" }
             ]
-            onChanged: function(v) { root.run(["audio", v]) }
+            onChanged: function(v) { root.run(["audio", v]); root.noteChange(false) }
           }
         }
 
         Section {
           title: "AUTOMATION"
-          visible: root.tab === "camera"
+          visible: root.tab === "position"
           Toggle {
             width: parent.width
             label: "Gesture control"
             checked: root.status.gesture === "true"
             foreground: root.fg
             fontFamily: root.fontFamily
-            onClicked: root.run(["toggle-gesture"])
+            onClicked: { root.run(["toggle-gesture"]); root.noteChange(false) }
           }
           Toggle {
             width: parent.width
-            label: "Auto mode"
-            description: "Track on call start, privacy on call end (" + (root.status.auto || "?") + ")"
-            checked: root.online && root.status.auto !== "off"
+            label: "Follow camera use"
+            description: "Track ~4s after an app uses the camera or mic, privacy ~10s after it stops"
+            checked: root.followUsage
             foreground: root.fg
             fontFamily: root.fontFamily
-            onClicked: root.run(["toggle-auto"])
+            onClicked: root.setSetting("followUsage", !root.followUsage)
           }
         }
 
         Section {
           title: "PAN · TILT · ZOOM"
           visible: root.tab === "position"
-          SliderRow { text: "pan"; minimum: -150; maximum: 150; current: Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]) } }
-          SliderRow { text: "tilt"; minimum: -90; maximum: 90; current: Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]) } }
-          SliderRow { text: "zoom"; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]) } }
+          SliderRow { text: "pan"; minimum: -150; maximum: 150; current: Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]); root.noteChange(true) } }
+          SliderRow { text: "tilt"; minimum: -90; maximum: 90; current: Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]); root.noteChange(true) } }
+          SliderRow { text: "zoom"; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.noteChange(true) } }
           Row {
             spacing: Style.space(6)
-            Action { iconText: "\u{F01A4}"; text: "Center"; onClicked: root.run(["center"]) }
+            Action { iconText: "\u{F01A4}"; text: "Center"; onClicked: { root.run(["center"]); root.noteChange(true) } }
             Action { iconText: "\u{F0450}"; text: "Sync"; onClicked: root.run(["sync"]) }
             Action { iconText: "\u{F059F}"; text: "Web UI"; onClicked: { Quickshell.execDetached(["omarchy-launch-browser", root.webUrl]); root.close() } }
-          }
-        }
-
-        Section {
-          title: "PRESETS"
-          visible: root.tab === "presets"
-          Flow {
-            width: parent.width
-            spacing: Style.space(6)
-            Repeater {
-              model: root.presets
-              Action {
-                required property var modelData
-                iconText: "\u{F00C0}"
-                text: String(modelData)
-                tooltipText: root.presetSummary(String(modelData)) + "\nLeft click: load · Right click: delete"
-                onClicked: root.loadPreset(String(modelData))
-                onRightClicked: root.deletePreset(String(modelData))
-              }
-            }
-          }
-          Row {
-            width: parent.width
-            spacing: Style.space(6)
-            TextField {
-              id: presetName
-              width: parent.width - saveButton.width - parent.spacing
-              placeholderText: "Save current setup as…"
-              foreground: root.fg
-              onAccepted: saveButton.clicked()
-            }
-            Action {
-              id: saveButton
-              iconText: "\u{F0193}"
-              text: "Save"
-              onClicked: {
-                var name = presetName.text.trim()
-                if (name === "") return
-                root.savePreset(name)
-                presetName.text = ""
-              }
-            }
-          }
-          Text {
-            width: parent.width
-            wrapMode: Text.WordWrap
-            textFormat: Text.PlainText
-            text: "A preset saves position, image controls, audio mode and gestures. Camera and auto mode are left as they are."
-            color: root.fg
-            opacity: 0.6
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
           }
         }
 
