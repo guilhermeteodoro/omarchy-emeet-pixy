@@ -152,7 +152,8 @@ Panel {
             value: root.camera
             options: [
               { value: "tracking", label: "Track", icon: "\u{F0C7B}" },
-              { value: "idle", label: "Idle", icon: "\u{F04B2}" },
+              // emeet-pixyd calls this `idle`: lens open, motors hold position.
+              { value: "idle", label: "Static", icon: "\u{F0403}" },
               { value: "privacy", label: "Privacy", icon: "\u{F0209}" }
             ]
             // The CLI verb for tracking mode is `track`.

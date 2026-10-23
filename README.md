@@ -37,8 +37,7 @@ shows the mode, audio mode and call state.
 
 | Section    | Controls                                  | emeet-pixyd command                        |
 |------------|-------------------------------------------|--------------------------------------------|
-| Camera     | Track / Idle / Privacy                    | `track`, `idle`, `privacy`                 |
-|            | Face / Half body / Full body              | `tracking <variant>`                       |
+| Camera     | Track / Static / Privacy                  | `track`, `idle`, `privacy`                 |
 | Audio      | Noise cancel / Live / Original            | `audio nc\|live\|org`                      |
 | Automation | Gesture control, Auto mode switches       | `toggle-gesture`, `toggle-auto`            |
 | PTZ        | Pan (±150), tilt (±90), zoom (100–150)    | `pan`, `tilt`, `zoom` (sent on release)    |
