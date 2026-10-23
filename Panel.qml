@@ -814,6 +814,8 @@ Panel {
             Dropdown {
               width: parent.width - newButton.width - deleteButton.width - parent.spacing * 2
               showLabel: false
+              // Match the New / delete buttons next to it.
+              rowHeight: newButton.height
               value: root.currentPreset
               options: root.presets
               fontFamily: root.fontFamily
