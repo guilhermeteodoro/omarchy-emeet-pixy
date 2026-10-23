@@ -87,6 +87,7 @@ the last position seen in Static (`staticPosition` setting) and, whenever the
 camera comes back to Static from privacy or tracking (panel, right click or
 CLI), moves there through `center`, so the motors, the daemon and the sliders
 agree again.
+
 ### Presets
 
 A preset is the daemon's PTZ preset extended with the rest of the setup: every
