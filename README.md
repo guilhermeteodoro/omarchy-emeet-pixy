@@ -42,12 +42,12 @@ it. Off: the lens is left as the camera came up until a call has come and gone.
 The follower runs inside the bar widget, so it stops if the widget is removed
 from the bar.
 
-### Keep the lens open during meetings
+### Keep camera awake during meetings
 
 The camera has its own idle timer: after some seconds without an app
 streaming, it closes the lens by itself. In a call where you turn your video
 off, that means the lens closes mid-meeting and turning video back on shows
-Privacy. **Keep the lens open during meetings** turns that timer off; with it
+Privacy. **Keep camera awake during meetings** turns that timer off; with it
 off, the camera closes the lens after the same delay as below. Implemented in
 `bin/privacytimer` (`SET/GET_PRIVACY_TRIGGER_TIME`, `09 02 01 00` / `09 02 01 01`,
 u32 LE seconds, recovered from EMEET STUDIO 2.0.4).
@@ -91,15 +91,17 @@ color while tracking, and dimmed when the daemon is unreachable. The tooltip
 shows the mode, audio mode and call state.
 
 ## Panel
-Two tabs (Position, Image), switched by click or Left/Right (h/l), with the
-preset bar below them on both; the last tab is kept for the next open:
+Three tabs (Position, Image, Privacy settings), switched by click or
+Left/Right (h/l), with the preset bar below them on all; the last tab is kept
+for the next open. Privacy settings holds Follow camera use, Start in Privacy
+mode, Keep camera awake during meetings and the delay after a meeting:
 
 | Tab      | Section    | Controls                                  | Command                                  |
 |----------|------------|-------------------------------------------|------------------------------------------|
 | Position | Camera     | Track / Static / Privacy                  | `track`, `idle`, `privacy`               |
 |          |            | Face / Half body / Full body              | `tracking <variant>`                     |
 |          | Audio      | Noise cancel / Live / Original            | `audio nc\|live\|org`                    |
-|          | Automation | Gesture control, Follow camera use        | `toggle-gesture`, `followUsage` setting  |
+|          | Automation | Gesture control                           | `toggle-gesture`                         |
 |          | PTZ        | Pan (±150), tilt (±90), zoom (100–150), Static only | `pan`, `tilt`, `zoom` (sent on release)  |
 |          |            | Center, Sync, Web UI                      | `center`, `sync`                         |
 | Image    | Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`     |
@@ -185,7 +187,7 @@ Edit the entry in `~/.config/omarchy/shell.json` or use the bar settings UI:
 | `command`            | `emeet-pixy`            | Client binary name or absolute path       |
 | `refreshIntervalSec` | `5`                     | Poll interval while the panel is closed   |
 | `webUrl`             | `http://127.0.0.1:8090` | Daemon web UI (`EMEET_PIXYD_WEB_ADDR`)    |
-| `followUsage`        | `true`                  | Follow camera use (panel: Position tab)   |
+| `followUsage`        | `true`                  | Follow camera use (Privacy settings tab)  |
 | `startPrivacy`       | `true`                  | Close the lens at login and on plug-in    |
 | `privacyDelaySec`    | `10`                    | Seconds to Privacy mode after a meeting   |
 | `preset`             | `""`                    | Current preset (preset bar)               |

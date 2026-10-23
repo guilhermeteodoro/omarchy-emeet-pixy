@@ -38,7 +38,7 @@ Panel {
   readonly property string presetsPath: Quickshell.env("HOME") + "/.config/omarchy/emeet-pixy-presets.json"
   // Panel tab; kept while the shell runs so reopening lands where you left.
   property string tab: "position"
-  readonly property var tabs: ["position", "image"]
+  readonly property var tabs: ["position", "image", "privacy"]
   property bool naming: false
   // Parsed `v4l2-ctl --list-ctrls-menus`, see Controls.js.
   property var controls: []
@@ -180,8 +180,8 @@ Panel {
   }
 
   // The camera's own idle timer (bin/privacytimer, seconds without streaming,
-  // 0 = never) closes the lens while video is turned off mid-meeting. "Keep the
-  // lens open during meetings" turns it off; otherwise it uses the same delay
+  // 0 = never) closes the lens while video is turned off mid-meeting. "Keep camera
+  // awake during meetings" turns it off; otherwise it uses the same delay
   // as the follower. -1 = not read yet.
   property int privacyTimer: -1
   readonly property bool keepLensOpen: privacyTimer === 0
@@ -523,7 +523,8 @@ Panel {
           value: root.tab
           options: [
             { value: "position", label: "Position", icon: "\u{F0100}" },
-            { value: "image", label: "Image", icon: "\u{F02F1}" }
+            { value: "image", label: "Image", icon: "\u{F02F1}" },
+            { value: "privacy", label: "Privacy settings", icon: "\u{F099D}" }
           ]
           onChanged: function(v) { root.tab = v }
         }
@@ -599,49 +600,6 @@ Panel {
             fontFamily: root.fontFamily
             onClicked: { root.run(["toggle-gesture"]); root.noteChange(false) }
           }
-          Toggle {
-            width: parent.width
-            label: "Follow camera use"
-            description: "Track ~4s after an app uses the camera or mic; Privacy mode once the meeting is over"
-            checked: root.followUsage
-            foreground: root.fg
-            fontFamily: root.fontFamily
-            onClicked: root.setSetting("followUsage", !root.followUsage)
-          }
-          Toggle {
-            width: parent.width
-            label: "Start in Privacy mode"
-            description: "Close the lens at login and whenever the camera is plugged in"
-            checked: root.startPrivacy
-            enabled: root.followUsage
-            opacity: enabled ? 1.0 : 0.4
-            foreground: root.fg
-            fontFamily: root.fontFamily
-            onClicked: root.setSetting("startPrivacy", !root.startPrivacy)
-          }
-          Toggle {
-            width: parent.width
-            visible: root.privacyTimer >= 0
-            label: "Keep the lens open during meetings"
-            description: "Without this, the camera closes the lens by itself whenever you turn your video off in a call"
-            checked: root.keepLensOpen
-            foreground: root.fg
-            fontFamily: root.fontFamily
-            onClicked: root.privacyTimerCall(root.keepLensOpen ? root.privacyDelay : 0)
-          }
-          NumberField {
-            label: "Seconds to Privacy mode after a meeting ends"
-            from: 2
-            to: 3600
-            value: root.privacyDelay
-            foreground: root.fg
-            fontFamily: root.fontFamily
-            fontSize: Style.font.bodySmall
-            onModified: function(v) {
-              root.setSetting("privacyDelaySec", v)
-              if (root.privacyTimer > 0) root.privacyTimerCall(v)
-            }
-          }
         }
 
         Section {
@@ -687,6 +645,54 @@ Panel {
             font.pixelSize: Style.font.caption
             onLinkActivated: function(link) { Quickshell.execDetached(["omarchy-launch-browser", link]); root.close() }
             HoverHandler { cursorShape: parent.hoveredLink ? Qt.PointingHandCursor : Qt.ArrowCursor }
+          }
+        }
+
+        Section {
+          title: "PRIVACY"
+          visible: root.tab === "privacy"
+          Toggle {
+            width: parent.width
+            label: "Follow camera use"
+            description: "Track ~4s after an app uses the camera or mic; Privacy mode once the meeting is over"
+            checked: root.followUsage
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            onClicked: root.setSetting("followUsage", !root.followUsage)
+          }
+          Toggle {
+            width: parent.width
+            label: "Start in Privacy mode"
+            description: "Go into Privacy mode at login and whenever the camera is plugged in"
+            checked: root.startPrivacy
+            enabled: root.followUsage
+            opacity: enabled ? 1.0 : 0.4
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            onClicked: root.setSetting("startPrivacy", !root.startPrivacy)
+          }
+          Toggle {
+            width: parent.width
+            visible: root.privacyTimer >= 0
+            label: "Keep camera awake during meetings"
+            description: "Stops the camera's default of going into Privacy mode when you turn your video off in a call"
+            checked: root.keepLensOpen
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            onClicked: root.privacyTimerCall(root.keepLensOpen ? root.privacyDelay : 0)
+          }
+          NumberField {
+            label: "Seconds to Privacy mode after a meeting ends"
+            from: 2
+            to: 3600
+            value: root.privacyDelay
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            onModified: function(v) {
+              root.setSetting("privacyDelaySec", v)
+              if (root.privacyTimer > 0) root.privacyTimerCall(v)
+            }
           }
         }
 

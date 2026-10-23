@@ -69,7 +69,7 @@
         "key": "startPrivacy",
         "type": "boolean",
         "label": "Start in Privacy mode",
-        "description": "Close the lens at login and whenever the camera is plugged in (it powers up with the lens open). Needs Follow camera use.",
+        "description": "Go into Privacy mode at login and whenever the camera is plugged in (it powers up out of Privacy mode). Needs Follow camera use.",
         "defaultValue": true
       },
       {
@@ -80,7 +80,7 @@
         "max": 3600,
         "step": 1,
         "defaultValue": 10,
-        "description": "How long after the last app stops using the camera and microphone the lens closes."
+        "description": "How long after the last app stops using the camera and microphone the camera goes into Privacy mode."
       },
       {
         "key": "preset",
