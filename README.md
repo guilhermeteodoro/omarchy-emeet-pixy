@@ -10,12 +10,12 @@ connects (replacing cameractrlsd and a privacy-on-connect udev hook).
 ## Requirements
 
 - Omarchy 4 (Quattro) shell
-- `emeet-pixyd` enabled as a user service (`systemctl --user enable --now
-  emeet-pixyd`); the widget calls its client (`emeet-pixy` or
-  `emeet-pixyd <command>`). `~/.nix-profile/bin` and `~/.local/bin` are added
-  to `PATH`, so a Nix profile install works without changes.
+- [emeet-pixyd](https://github.com/LarsArtmann/emeet-pixyd) installed; the
+  widget calls its client (`emeet-pixy` or `emeet-pixyd <command>`).
+  `~/.nix-profile/bin` and `~/.local/bin` are added to `PATH`, so a Nix profile
+  install works without changes.
 - `v4l2-ctl` (v4l-utils), `/usr/bin/python3` (helpers in `bin/`), `udevadm`
-  (systemd), `pkexec` (polkit) for the device-access option
+  (systemd)
 
 ## Following camera use
 
@@ -30,14 +30,14 @@ capture streams):
 
 emeet-pixyd's own auto mode is switched off so the two never fight. At startup
 the widget runs `sync` and the first poll adopts the camera's real state:
-restarting the shell mid-call with the lens open never switches it, an idle
-start still closes the lens, and a camera left in privacy while an app streams
-gets opened.
+restarting the shell mid-call with the lens open never switches it, and a
+camera left in privacy while an app streams gets opened.
 
-When the camera connects (`udevadm monitor`, plus once at startup when it is
-idle), the widget runs `sync`, restores the image controls of the current
-preset, and lets the follower re-apply track or privacy, since the camera comes
-back at its firmware home position with the lens open.
+**Start in Privacy mode** (`startPrivacy`, on by default): the camera powers up
+at its firmware home position with the lens open, so at login and whenever it
+is plugged in (`udevadm monitor`) the widget runs `sync`, restores the current
+preset's image controls and closes the lens ~10s later unless an app is using
+it. Off: the lens is left as the camera came up until a call has come and gone.
 
 The follower runs inside the bar widget, so it stops if the widget is removed
 from the bar.
@@ -52,27 +52,25 @@ through `bin/privacytimer` (`SET/GET_PRIVACY_TRIGGER_TIME`, `09 02 01 00` /
 the official app's: Never, 10 s, 1 min, 15 min; any other value already on the
 camera shows as an extra choice.
 
-### Device access
-
-emeet-pixyd and the plugin's HID helpers need write access to the camera's
-hidraw node. `udev/70-emeet-pixy.rules` grants it to the logged-in user only
-(`TAG+="uaccess"`). "Device access", at the end of the Position tab, says how
-the camera is reachable right now and offers the matching action: Install
-access rule, Replace old rule (also deletes a hand-written world-writable
-`/etc/udev/rules.d/99-emeet-pixyd.rules`) or Remove access rule, through
-`pkexec` (a password dialog). By hand:
-
-```bash
-sudo install -m644 udev/70-emeet-pixy.rules /etc/udev/rules.d/
-sudo udevadm control --reload && sudo udevadm trigger -s hidraw
-```
-
 ## Install
 
 ```bash
 omarchy plugin add https://github.com/guilhermeteodoro/omarchy-emeet-pixy.git --enable
-omarchy bar move guilhermeteodoro.emeet-pixy --section right   # optional
+~/.config/omarchy/plugins/guilhermeteodoro.emeet-pixy/install.sh   # once, asks for sudo
+omarchy bar move guilhermeteodoro.emeet-pixy --section right       # optional
 ```
+
+Omarchy's plugin installer never runs plugin code or sudo, so the one-time
+system part lives in `install.sh`:
+
+- installs `udev/70-emeet-pixy.rules`, which lets the logged-in user (only)
+  talk to the camera's HID controls (`TAG+="uaccess"`); emeet-pixyd, live
+  position and the privacy timer need it. It replaces a hand-written,
+  world-writable `/etc/udev/rules.d/99-emeet-pixyd.rules` if present;
+- enables `emeet-pixyd.service` for your user.
+
+If that step was skipped, the panel shows "Setup incomplete" with the command
+to copy.
 
 Update with `omarchy plugin update guilhermeteodoro.emeet-pixy`.
 
@@ -184,6 +182,7 @@ Edit the entry in `~/.config/omarchy/shell.json` or use the bar settings UI:
 | `refreshIntervalSec` | `5`                     | Poll interval while the panel is closed   |
 | `webUrl`             | `http://127.0.0.1:8090` | Daemon web UI (`EMEET_PIXYD_WEB_ADDR`)    |
 | `followUsage`        | `true`                  | Follow camera use (panel: Position tab)   |
+| `startPrivacy`       | `true`                  | Close the lens at login and on plug-in    |
 | `preset`             | `""`                    | Current preset (preset bar)               |
 
 ## Keybindings
