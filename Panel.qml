@@ -166,6 +166,52 @@ Panel {
   //   agree again before anyone moves a slider.
   // Privacy -> Static returns to the last Static position, kept across restarts.
   property string hidraw: ""
+  // udev/70-emeet-pixy.rules grants the HID node to the seat user; live
+  // position and the privacy timer need it, and so does emeet-pixyd.
+  property bool hidrawAccess: true
+  property bool udevInstalled: false
+  readonly property string udevTarget: "/etc/udev/rules.d/70-emeet-pixy.rules"
+  readonly property string udevRule: Qt.resolvedUrl("udev/70-emeet-pixy.rules").toString().replace(/^file:\/\//, "")
+
+  // pkexec: the panel has no terminal for a sudo prompt. Installing also drops
+  // the hand-written world-writable rule this one replaces.
+  function setUdevRule(install) {
+    udevProc.command = ["pkexec", "sh", "-c", install
+      ? 'install -m644 "$1" "$2" && rm -f /etc/udev/rules.d/99-emeet-pixyd.rules && udevadm control --reload && udevadm trigger -s hidraw'
+      : 'rm -f "$2" && udevadm control --reload && udevadm trigger -s hidraw',
+      "sh", udevRule, udevTarget]
+    udevProc.running = true
+  }
+
+  function checkAccess() {
+    if (!accessProc.running) accessProc.running = true
+  }
+
+  // Firmware privacy timer (bin/privacytimer): seconds of no streaming before
+  // the camera closes the lens by itself, 0 = never. Works even when the
+  // shell is not running. -1 = not read yet.
+  property int privacyTimer: -1
+  readonly property var privacyTimerOptions: {
+    var base = [{ value: "0", label: "Never" }, { value: "10", label: "10 s" }, { value: "60", label: "1 min" }, { value: "900", label: "15 min" }]
+    var known = base.some(function(o) { return Number(o.value) === privacyTimer })
+    return known || privacyTimer < 0 ? base : base.concat([{ value: String(privacyTimer), label: privacyTimer + " s" }])
+  }
+
+  function privacyTimerCall(seconds) {
+    if (hidraw === "" || !hidrawAccess || timerProc.running) return
+    var args = [Qt.resolvedUrl("bin/privacytimer").toString().replace(/^file:\/\//, ""), hidraw]
+    timerProc.command = seconds === undefined ? args : args.concat([String(seconds)])
+    timerProc.running = true
+  }
+
+  Process {
+    id: timerProc
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: { var n = parseInt(String(text).trim(), 10); if (!isNaN(n)) root.privacyTimer = n }
+    }
+  }
+
   property var livePosition: null
   property bool adoptPending: false
   readonly property var staticPosition: setting("staticPosition", null)
@@ -289,7 +335,7 @@ Panel {
 
   onFollowUsageChanged: if (followUsage) run(["auto-off"])
 
-  onOpenedChanged: if (opened) { refresh(); presetsProc.running = true; refreshControls() }
+  onOpenedChanged: if (opened) { refresh(); presetsProc.running = true; refreshControls(); privacyTimerCall() }
   onDeviceChanged: { if (opened) refreshControls(); deviceProc.running = true }
   onCommandChanged: refresh()
   // sync first: the watcher's first poll adopts the camera state, so it must
@@ -359,9 +405,30 @@ Panel {
       onStreamFinished: {
         var m = String(text).match(/\/dev\/hidraw\d+/)
         root.hidraw = m ? m[0] : ""
+        if (root.hidraw !== "") root.checkAccess()
       }
     }
   }
+
+  Process {
+    id: accessProc
+    command: ["sh", "-c", 'test -e "$1"; i=$?; test -w "$2"; echo "$i $?"', "sh", root.udevTarget, root.hidraw]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var v = String(text).trim().split(" ")
+        root.udevInstalled = v[0] === "0"
+        root.hidrawAccess = v[1] === "0"
+      }
+    }
+  }
+
+  // udev applies the ACL asynchronously after the trigger.
+  Process {
+    id: udevProc
+    onExited: accessSoon.restart()
+  }
+  Timer { id: accessSoon; interval: 1500; onTriggered: root.checkAccess() }
 
   Process {
     id: motorProc
@@ -540,6 +607,21 @@ Panel {
             fontFamily: root.fontFamily
             onClicked: root.setSetting("followUsage", !root.followUsage)
           }
+          Text {
+            visible: root.privacyTimer >= 0
+            textFormat: Text.PlainText
+            text: "Camera closes the lens by itself after idle (firmware timer)"
+            color: root.fg
+            opacity: 0.6
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+          Choice {
+            visible: root.privacyTimer >= 0
+            value: String(root.privacyTimer)
+            options: root.privacyTimerOptions
+            onChanged: function(v) { root.privacyTimerCall(Number(v)) }
+          }
         }
 
         Section {
@@ -655,6 +737,24 @@ Panel {
             text: "Reset image to defaults"
             tooltipText: "Right click a slider to reset just that control"
             onClicked: root.writeControls(Controls.resetArg(root.controls))
+          }
+        }
+
+        Section {
+          title: "DEVICE ACCESS"
+          visible: root.tab === "position" && root.hidraw !== ""
+          Toggle {
+            width: parent.width
+            label: "Camera HID access (udev rule)"
+            description: root.udevInstalled
+              ? "Plugin rule installed: the logged-in user can reach " + root.hidraw + ". Turning it off removes it (asks for your password)"
+              : (root.hidrawAccess
+                ? "Working through another rule; install the plugin's, logged-in user only (asks for your password)"
+                : "Needed for live position, the privacy timer and emeet-pixyd (asks for your password)")
+            checked: root.udevInstalled
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            onClicked: root.setUdevRule(!root.udevInstalled)
           }
         }
 

@@ -1,0 +1,40 @@
+#!/usr/bin/python3
+# Reads or sets the EMEET PIXY's built-in privacy timer: the firmware closes
+# the lens after this many idle seconds (no app streaming); 0 = never.
+#   privacytimer <hidraw>            prints the current seconds
+#   privacytimer <hidraw> <seconds>  sets it, then prints the read-back value
+# Commands recovered from EMEET STUDIO 2.0.4 (macOS), HID v2 frame
+# [head 4][index u8][total length u16 LE][chunk length u8][payload]:
+#   SET_PRIVACY_TRIGGER_TIME 09 02 01 00, payload u32 LE seconds
+#   GET_PRIVACY_TRIGGER_TIME 09 02 01 01, empty payload; reply u32 LE at 8
+# The app offers 10, 60, 900 and 0 ("Never") for the PIXY.
+import os, select, struct, sys
+
+SET, GET = bytes([9, 2, 1, 0]), bytes([9, 2, 1, 1])
+
+
+def call(fd, head, payload=b""):
+    frame = head + bytes([0]) + struct.pack("<H", len(payload)) + bytes([len(payload)]) + payload
+    os.write(fd, frame + bytes(32 - len(frame)))
+    while True:
+        ready, _, _ = select.select([fd], [], [], 1.0)
+        if not ready:
+            raise TimeoutError
+        reply = os.read(fd, 64)
+        if len(reply) >= 9 and reply[0] == 9 and reply[1] & 0x1F == 2 and reply[2:4] == head[2:4]:
+            return reply
+
+
+try:
+    fd = os.open(sys.argv[1], os.O_RDWR)
+    if len(sys.argv) > 2:
+        seconds = int(sys.argv[2])
+        if not 0 <= seconds <= 0xFFFFFFFF:
+            raise ValueError
+        call(fd, SET, struct.pack("<I", seconds))
+    reply = call(fd, GET)
+    if len(reply) < 12:
+        raise ValueError
+    print(struct.unpack("<I", reply[8:12])[0])
+except (OSError, IndexError, ValueError, TimeoutError):
+    sys.exit(1)
