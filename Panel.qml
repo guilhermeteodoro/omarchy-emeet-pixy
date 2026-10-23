@@ -1,11 +1,14 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "Controls.js" as Controls
 
-// Bar button + popup for the EMEET PIXY. Every action is one emeet-pixyd
-// client call; the panel only renders what `status` reports back.
+// Bar button + popup for the EMEET PIXY. Camera actions are emeet-pixyd client
+// calls; image controls (brightness, exposure, …) go straight to V4L2 with
+// v4l2-ctl, like cameractrls does. The panel only renders what they report.
 Panel {
   id: root
   moduleName: "guilhermeteodoro.emeet-pixy"
@@ -20,6 +23,9 @@ Panel {
   // Parsed `status`: camera, audio, gesture, pan, tilt, zoom, in_call, auto, device.
   property var status: ({})
   property var presets: []
+  // Parsed `v4l2-ctl --list-ctrls-menus`, see Controls.js.
+  property var controls: []
+  readonly property string device: status.device || ""
   readonly property bool online: status.camera !== undefined
   readonly property string camera: status.camera || ""
   readonly property bool inCall: status.in_call === "yes"
@@ -66,7 +72,27 @@ Panel {
     presets = names
   }
 
-  onOpenedChanged: if (opened) { refresh(); presetsProc.running = true }
+  function refreshControls() {
+    if (device !== "" && !controlsProc.running) controlsProc.running = true
+  }
+
+  // Optimistic: the row shows the new value at once; the re-read 400ms later
+  // picks up driver clamping and controls that became (in)active.
+  function setControl(name, value) {
+    controls = controls.map(function(c) {
+      return c.name === name ? Object.assign({}, c, { value: value }) : c
+    })
+    writeControls(name + "=" + value)
+  }
+
+  function writeControls(arg) {
+    if (device === "" || arg === "") return
+    Quickshell.execDetached(["v4l2-ctl", "-d", device, "-c", arg])
+    controlsSoon.restart()
+  }
+
+  onOpenedChanged: if (opened) { refresh(); presetsProc.running = true; refreshControls() }
+  onDeviceChanged: if (opened) refreshControls()
   onCommandChanged: refresh()
   Component.onCompleted: refresh()
 
@@ -81,6 +107,14 @@ Panel {
     command: root.argv(["preset", "list"])
     stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.parsePresets(text) }
   }
+
+  Process {
+    id: controlsProc
+    command: ["v4l2-ctl", "-d", root.device, "--list-ctrls-menus"]
+    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.controls = Controls.parse(text) }
+  }
+
+  Timer { id: controlsSoon; interval: 400; onTriggered: root.refreshControls() }
 
   Timer { interval: root.opened ? 2000 : root.refreshIntervalSec * 1000; running: true; repeat: true; onTriggered: root.refresh() }
   Timer { id: refreshSoon; interval: 700; onTriggered: { root.refresh(); if (root.opened) presetsProc.running = true } }
@@ -110,7 +144,7 @@ Panel {
     bar: root.bar
     open: root.opened
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(400))
+    contentWidth: panel.fittedContentWidth(Style.space(440))
     contentHeight: panel.fittedContentHeight(column.implicitHeight)
 
     PanelKeyCatcher {
@@ -120,11 +154,20 @@ Panel {
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
 
+      Flickable {
+        id: flick
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: column.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
+        interactive: contentHeight > height
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
       Column {
         id: column
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
+        width: flick.width
         spacing: Style.space(12)
 
         PanelHero {
@@ -206,9 +249,9 @@ Panel {
 
         Section {
           title: "PAN · TILT · ZOOM"
-          Axis { name: "pan"; minimum: -150; maximum: 150 }
-          Axis { name: "tilt"; minimum: -90; maximum: 90 }
-          Axis { name: "zoom"; minimum: 100; maximum: 150 }
+          SliderRow { text: "pan"; minimum: -150; maximum: 150; current: Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]) } }
+          SliderRow { text: "tilt"; minimum: -90; maximum: 90; current: Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]) } }
+          SliderRow { text: "zoom"; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]) } }
           Row {
             spacing: Style.space(6)
             Action { iconText: "\u{F01A4}"; text: "Center"; onClicked: root.run(["center"]) }
@@ -257,6 +300,68 @@ Panel {
             }
           }
         }
+
+        Section {
+          title: "IMAGE"
+          visible: root.controls.length > 0
+          Repeater {
+            model: root.controls
+            Column {
+              id: ctl
+              required property var modelData
+              readonly property var c: modelData
+              width: parent ? parent.width : 0
+              spacing: Style.space(4)
+              // Inactive = governed by an automatic mode (e.g. exposure time
+              // while auto exposure is on); the driver rejects writes.
+              enabled: !c.inactive
+              opacity: c.inactive ? 0.4 : 1.0
+
+              SliderRow {
+                visible: ctl.c.type === "int"
+                text: ctl.c.label
+                labelWidth: Style.space(150)
+                minimum: ctl.c.min
+                maximum: ctl.c.max
+                step: ctl.c.step
+                current: ctl.c.value
+                onCommitted: function(v) { root.setControl(ctl.c.name, v) }
+                onReset: root.setControl(ctl.c.name, ctl.c.default)
+              }
+              Toggle {
+                visible: ctl.c.type === "bool"
+                width: parent.width
+                label: ctl.c.label
+                checked: ctl.c.value === 1
+                foreground: root.fg
+                fontFamily: root.fontFamily
+                onClicked: root.setControl(ctl.c.name, ctl.c.value === 1 ? 0 : 1)
+              }
+              Text {
+                visible: ctl.c.type === "menu"
+                textFormat: Text.PlainText
+                text: ctl.c.label
+                color: root.fg
+                opacity: 0.6
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+              Choice {
+                visible: ctl.c.type === "menu"
+                value: String(ctl.c.value)
+                options: ctl.c.options
+                onChanged: function(v) { root.setControl(ctl.c.name, Number(v)) }
+              }
+            }
+          }
+          Action {
+            iconText: "\u{F0450}"
+            text: "Reset image to defaults"
+            tooltipText: "Right click a slider to reset just that control"
+            onClicked: root.writeControls(Controls.resetArg(root.controls))
+          }
+        }
+      }
       }
     }
   }
@@ -286,22 +391,27 @@ Panel {
     bordered: true
   }
 
-  // One PTZ axis: label, slider and value. Commands are sent on release only,
-  // so a drag moves the motor once instead of per pixel.
-  component Axis: Row {
-    id: axis
-    property string name: ""
+  // Label, slider and value. Commits on release only, so a drag sends one
+  // command (one motor move) instead of one per pixel. Right click = reset.
+  component SliderRow: Row {
+    id: srow
+    property string text: ""
+    property real labelWidth: Style.space(40)
     property real minimum: 0
     property real maximum: 0
-    readonly property real current: Number(root.status[name] || 0)
+    property real step: 1
+    property real current: 0
+    signal committed(int value)
+    signal reset()
     width: parent ? parent.width : 0
     spacing: Style.space(8)
 
     Text {
-      width: Style.space(40)
+      width: srow.labelWidth
       anchors.verticalCenter: parent.verticalCenter
       textFormat: Text.PlainText
-      text: axis.name
+      text: srow.text
+      elide: Text.ElideRight
       color: root.fg
       opacity: 0.6
       font.family: root.fontFamily
@@ -310,16 +420,17 @@ Panel {
     PanelSlider {
       id: slider
       bar: root.bar
-      width: parent.width - Style.space(40) - Style.space(40) - parent.spacing * 2
-      minimum: axis.minimum
-      maximum: axis.maximum
-      step: 1
+      width: parent.width - srow.labelWidth - Style.space(44) - parent.spacing * 2
+      minimum: srow.minimum
+      maximum: srow.maximum
+      step: srow.step
       integer: true
-      value: axis.current
-      onReleased: function(v) { root.run([axis.name, String(Math.round(v))]) }
+      value: srow.current
+      onReleased: function(v) { srow.committed(Math.round(v)) }
+      onRightClicked: srow.reset()
     }
     Text {
-      width: Style.space(40)
+      width: Style.space(44)
       anchors.verticalCenter: parent.verticalCenter
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText

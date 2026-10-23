@@ -44,6 +44,19 @@ shows the mode, audio mode and call state.
 |            | Center, Sync, Web UI                      | `center`, `sync`                           |
 | Presets    | Click to load, right click to delete      | `preset load`, `preset delete`             |
 |            | Name field + Save                         | `preset save <name>`                       |
+| Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`       |
+|            | Reset image to defaults                   | one `v4l2-ctl -c` with all defaults        |
+
+The Image section works like [cameractrls](https://github.com/soyersoyer/cameractrls):
+it lists the controls the driver reports (`v4l2-ctl --list-ctrls-menus`)
+and shows them as sliders, switches or choices. On the PIXY these are brightness,
+contrast, saturation, hue, gamma, gain, sharpness, backlight compensation,
+power-line frequency, white balance (auto/temperature), auto exposure
+(manual/aperture priority), exposure time and focus (auto/absolute). Pan, tilt
+and zoom are left out because emeet-pixyd owns the motors. A control that an
+auto mode governs (exposure time under aperture priority, focus under
+continuous autofocus) is dimmed until you switch that auto mode off. Right click
+a slider to reset that control. The parser test runs with `node Controls.test.js`.
 
 The daemon does not report the tracking variant, so those buttons never show
 as selected. Every action triggers a status refresh. The bar polls `status`
