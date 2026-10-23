@@ -3,7 +3,13 @@
 // emeet-pixyd's own auto mode is turned off so the two never fight.
 
 var START_POLLS = 2 // x 2s: lens opens ~4s after an app starts using the camera
-var END_POLLS = 5   // x 2s: privacy ~10s after camera and audio capture stop
+var POLL_SEC = 2
+var END_POLLS = 5   // default x 2s: privacy ~10s after camera and audio capture stop
+
+// Privacy delay in seconds -> idle polls (at least one).
+function endPolls(delaySec) {
+  return Math.max(1, Math.ceil(Number(delaySec) / POLL_SEC))
+}
 
 function initial() {
   return { primed: false, state: "", busy: 0, idle: 0 }
@@ -21,7 +27,8 @@ function reconnected(startPrivacy) {
 // shell restart mid-call with the lens open never switches the camera, a
 // privacy start with an app streaming still opens the lens, and an idle start
 // with the lens open gets privacy only with startPrivacy (login / boot).
-function step(s, inUse, camera, startPrivacy) {
+function step(s, inUse, camera, startPrivacy, idlePolls) {
+  var end = idlePolls || END_POLLS
   if (!s.primed) {
     var state = camera === "privacy" || !startPrivacy ? "privacy" : (inUse ? "tracking" : "")
     if (camera !== "privacy" && inUse) state = "tracking"
@@ -31,10 +38,10 @@ function step(s, inUse, camera, startPrivacy) {
   var idle = inUse ? 0 : s.idle + 1
   if (s.state !== "tracking" && busy >= START_POLLS)
     return { next: { primed: true, state: "tracking", busy: busy, idle: idle }, action: "track" }
-  if (s.state !== "privacy" && idle >= END_POLLS)
+  if (s.state !== "privacy" && idle >= end)
     return { next: { primed: true, state: "privacy", busy: busy, idle: idle }, action: "privacy" }
   return { next: { primed: true, state: s.state, busy: busy, idle: idle }, action: "" }
 }
 
 if (typeof module !== "undefined")
-  module.exports = { START_POLLS: START_POLLS, END_POLLS: END_POLLS, initial: initial, reconnected: reconnected, step: step }
+  module.exports = { START_POLLS: START_POLLS, END_POLLS: END_POLLS, endPolls: endPolls, initial: initial, reconnected: reconnected, step: step }

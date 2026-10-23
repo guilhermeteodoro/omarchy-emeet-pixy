@@ -179,15 +179,14 @@ Panel {
     if (!accessProc.running) accessProc.running = true
   }
 
-  // Firmware privacy timer (bin/privacytimer): seconds of no streaming before
-  // the camera closes the lens by itself, 0 = never. Works even when the
-  // shell is not running. -1 = not read yet.
+  // The camera's own idle timer (bin/privacytimer, seconds without streaming,
+  // 0 = never) closes the lens while video is turned off mid-meeting. "Keep the
+  // lens open during meetings" turns it off; otherwise it uses the same delay
+  // as the follower. -1 = not read yet.
   property int privacyTimer: -1
-  readonly property var privacyTimerOptions: {
-    var base = [{ value: "0", label: "Never" }, { value: "10", label: "10 s" }, { value: "60", label: "1 min" }, { value: "900", label: "15 min" }]
-    var known = base.some(function(o) { return Number(o.value) === privacyTimer })
-    return known || privacyTimer < 0 ? base : base.concat([{ value: String(privacyTimer), label: privacyTimer + " s" }])
-  }
+  readonly property bool keepLensOpen: privacyTimer === 0
+  // Seconds from the end of a meeting to Privacy mode (follower and timer).
+  readonly property int privacyDelay: Math.max(2, Number(setting("privacyDelaySec", 10)))
 
   function privacyTimerCall(seconds) {
     if (hidraw === "" || !hidrawAccess || timerProc.running) return
@@ -287,7 +286,7 @@ Panel {
   function pollUse(videoBusy) {
     var wasPrimed = watch.primed
     var inUse = videoBusy || capturing
-    var r = Watch.step(watch, inUse, camera, startPrivacy)
+    var r = Watch.step(watch, inUse, camera, startPrivacy, Watch.endPolls(privacyDelay))
     watch = r.next
     if (!wasPrimed && !inUse) applyCurrentImage()
     if (r.action === "track") {
@@ -603,7 +602,7 @@ Panel {
           Toggle {
             width: parent.width
             label: "Follow camera use"
-            description: "Track ~4s after an app uses the camera or mic, privacy ~10s after it stops"
+            description: "Track ~4s after an app uses the camera or mic; Privacy mode once the meeting is over"
             checked: root.followUsage
             foreground: root.fg
             fontFamily: root.fontFamily
@@ -620,20 +619,28 @@ Panel {
             fontFamily: root.fontFamily
             onClicked: root.setSetting("startPrivacy", !root.startPrivacy)
           }
-          Text {
+          Toggle {
+            width: parent.width
             visible: root.privacyTimer >= 0
-            textFormat: Text.PlainText
-            text: "Camera closes the lens by itself after idle (firmware timer)"
-            color: root.fg
-            opacity: 0.6
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
+            label: "Keep the lens open during meetings"
+            description: "Without this, the camera closes the lens by itself whenever you turn your video off in a call"
+            checked: root.keepLensOpen
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            onClicked: root.privacyTimerCall(root.keepLensOpen ? root.privacyDelay : 0)
           }
-          Choice {
-            visible: root.privacyTimer >= 0
-            value: String(root.privacyTimer)
-            options: root.privacyTimerOptions
-            onChanged: function(v) { root.privacyTimerCall(Number(v)) }
+          NumberField {
+            label: "Seconds to Privacy mode after a meeting ends"
+            from: 2
+            to: 3600
+            value: root.privacyDelay
+            foreground: root.fg
+            fontFamily: root.fontFamily
+            fontSize: Style.font.bodySmall
+            onModified: function(v) {
+              root.setSetting("privacyDelaySec", v)
+              if (root.privacyTimer > 0) root.privacyTimerCall(v)
+            }
           }
         }
 

@@ -45,4 +45,15 @@ assert.deepEqual(run(W.initial(), [false, true, true, ...Array(5).fill(false)], 
 // A shell restart mid-call is unaffected by the option.
 assert.deepEqual(run(W.initial(), [true, true, true], "tracking", false), [])
 
+// Privacy delay: 60 s after a call = 30 idle polls.
+assert.equal(W.endPolls(60), 30)
+assert.equal(W.endPolls(1), 1)
+{
+  let st = W.initial(), acts = []
+  for (const u of [false, true, true, ...Array(29).fill(false)]) { const r = W.step(st, u, "idle", false, W.endPolls(60)); st = r.next; if (r.action) acts.push(r.action) }
+  assert.deepEqual(acts, ["track"])
+  const r = W.step(st, false, "idle", false, W.endPolls(60))
+  assert.equal(r.action, "privacy")
+}
+
 console.log("ok")

@@ -26,7 +26,7 @@ open, as browsers do, does not count) or any app records audio (PipeWire
 capture streams):
 
 - in use for ~4s: `track` plus the current preset's audio mode (`nc` without one);
-- idle for ~10s: `privacy`.
+- idle for `privacyDelaySec` seconds (default 10): `privacy`.
 
 emeet-pixyd's own auto mode is switched off so the two never fight. At startup
 the widget runs `sync` and the first poll adopts the camera's real state:
@@ -42,15 +42,19 @@ it. Off: the lens is left as the camera came up until a call has come and gone.
 The follower runs inside the bar widget, so it stops if the widget is removed
 from the bar.
 
-### Firmware privacy timer
+### Keep the lens open during meetings
 
-Independent of the follower, the camera itself can close the lens after a
-number of idle seconds (no app streaming), even while the shell is not
-running. Automation → "Camera closes the lens by itself" reads and sets it
-through `bin/privacytimer` (`SET/GET_PRIVACY_TRIGGER_TIME`, `09 02 01 00` /
-`09 02 01 01`, u32 LE seconds, recovered from EMEET STUDIO 2.0.4). Choices are
-the official app's: Never, 10 s, 1 min, 15 min; any other value already on the
-camera shows as an extra choice.
+The camera has its own idle timer: after some seconds without an app
+streaming, it closes the lens by itself. In a call where you turn your video
+off, that means the lens closes mid-meeting and turning video back on shows
+Privacy. **Keep the lens open during meetings** turns that timer off; with it
+off, the camera closes the lens after the same delay as below. Implemented in
+`bin/privacytimer` (`SET/GET_PRIVACY_TRIGGER_TIME`, `09 02 01 00` / `09 02 01 01`,
+u32 LE seconds, recovered from EMEET STUDIO 2.0.4).
+
+**Seconds to Privacy mode after a meeting ends** (`privacyDelaySec`, default
+10): how long after the last app stops using the camera and microphone the
+follower closes the lens.
 
 ## Install
 
@@ -183,6 +187,7 @@ Edit the entry in `~/.config/omarchy/shell.json` or use the bar settings UI:
 | `webUrl`             | `http://127.0.0.1:8090` | Daemon web UI (`EMEET_PIXYD_WEB_ADDR`)    |
 | `followUsage`        | `true`                  | Follow camera use (panel: Position tab)   |
 | `startPrivacy`       | `true`                  | Close the lens at login and on plug-in    |
+| `privacyDelaySec`    | `10`                    | Seconds to Privacy mode after a meeting   |
 | `preset`             | `""`                    | Current preset (preset bar)               |
 
 ## Keybindings

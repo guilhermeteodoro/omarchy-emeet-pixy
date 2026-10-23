@@ -30,7 +30,8 @@
       "webUrl": "http://127.0.0.1:8090",
       "followUsage": true,
       "preset": "",
-      "startPrivacy": true
+      "startPrivacy": true,
+      "privacyDelaySec": 10
     },
     "schema": [
       {
@@ -70,6 +71,16 @@
         "label": "Start in Privacy mode",
         "description": "Close the lens at login and whenever the camera is plugged in (it powers up with the lens open). Needs Follow camera use.",
         "defaultValue": true
+      },
+      {
+        "key": "privacyDelaySec",
+        "type": "integer",
+        "label": "Seconds to Privacy mode after a meeting",
+        "min": 2,
+        "max": 3600,
+        "step": 1,
+        "defaultValue": 10,
+        "description": "How long after the last app stops using the camera and microphone the lens closes."
       },
       {
         "key": "preset",
