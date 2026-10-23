@@ -81,7 +81,7 @@ Update with `omarchy plugin update guilhermeteodoro.emeet-pixy`.
 ## Bar button
 
 Left click always opens the panel. Middle and right click are configurable in
-the panel (Position → Bar button) or as `middleClick` / `rightClick`:
+the panel (Privacy settings → Bar button) or as `middleClick` / `rightClick`:
 
 | Action           | Effect                                                  |
 |------------------|---------------------------------------------------------|

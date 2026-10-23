@@ -627,20 +627,6 @@ Panel {
         }
 
         Section {
-          title: "BAR BUTTON"
-          visible: root.tab === "position"
-          Text {
-            textFormat: Text.PlainText
-            text: "Left click: open this panel"
-            color: root.fg
-            opacity: 0.6
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-          }
-          ClickRow { text: "Middle click"; value: root.middleClick; onPicked: function(v) { root.setSetting("middleClick", v) } }
-          ClickRow { text: "Right click"; value: root.rightClick; onPicked: function(v) { root.setSetting("rightClick", v) } }
-        }
-        Section {
           title: "PAN · TILT · ZOOM"
           visible: root.tab === "position"
           Text {
@@ -732,6 +718,21 @@ Panel {
               if (root.privacyTimer > 0) root.privacyTimerCall(v)
             }
           }
+        }
+
+        Section {
+          title: "BAR BUTTON"
+          visible: root.tab === "privacy"
+          Text {
+            textFormat: Text.PlainText
+            text: "Left click: open this panel"
+            color: root.fg
+            opacity: 0.6
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+          ClickRow { text: "Middle click"; value: root.middleClick; onPicked: function(v) { root.setSetting("middleClick", v) } }
+          ClickRow { text: "Right click"; value: root.rightClick; onPicked: function(v) { root.setSetting("rightClick", v) } }
         }
 
         Section {
