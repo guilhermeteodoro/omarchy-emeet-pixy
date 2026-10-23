@@ -31,7 +31,9 @@
       "followUsage": true,
       "preset": "",
       "startPrivacy": true,
-      "privacyDelaySec": 10
+      "privacyDelaySec": 10,
+      "middleClick": "web-ui",
+      "rightClick": "toggle-privacy"
     },
     "schema": [
       {
@@ -88,6 +90,32 @@
         "label": "Current preset",
         "description": "The last preset picked in the panel. Panel changes save into it automatically; its image controls are restored at login and whenever the camera is plugged in, and its audio mode is used when a call starts.",
         "defaultValue": ""
+      },
+      {
+        "key": "middleClick",
+        "type": "enum",
+        "label": "Middle click",
+        "options": [
+          "static-track",
+          "toggle-privacy",
+          "web-ui",
+          "none"
+        ],
+        "defaultValue": "web-ui",
+        "description": "static-track: switch Static/Track; toggle-privacy: Privacy and back to the previous mode; web-ui: open the daemon web UI; none."
+      },
+      {
+        "key": "rightClick",
+        "type": "enum",
+        "label": "Right click",
+        "options": [
+          "static-track",
+          "toggle-privacy",
+          "web-ui",
+          "none"
+        ],
+        "defaultValue": "toggle-privacy",
+        "description": "Same choices as Middle click."
       }
     ]
   }

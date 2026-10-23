@@ -23,6 +23,28 @@ Panel {
   // Close the lens at login and when the camera is plugged in (it powers up
   // at its firmware home position with the lens open).
   readonly property bool startPrivacy: setting("startPrivacy", true) === true
+  // Bar button: left always opens the panel; middle and right are configurable.
+  readonly property string middleClick: String(setting("middleClick", "web-ui"))
+  readonly property string rightClick: String(setting("rightClick", "toggle-privacy"))
+  readonly property var clickActions: [
+    { value: "static-track", label: "Switch Static \u2194 Track" },
+    { value: "toggle-privacy", label: "Privacy \u2194 previous mode" },
+    { value: "web-ui", label: "Open web UI" },
+    { value: "none", label: "Nothing" }
+  ]
+  // Last non-privacy mode, for "Privacy <-> previous mode".
+  property string lastMode: "idle"
+
+  function clickLabel(action) {
+    for (var i = 0; i < clickActions.length; i++) if (clickActions[i].value === action) return clickActions[i].label
+    return action
+  }
+
+  function runClick(action) {
+    if (action === "static-track") run([camera === "tracking" ? "idle" : "track"])
+    else if (action === "toggle-privacy") run([camera === "privacy" ? (lastMode === "tracking" ? "track" : "idle") : "privacy"])
+    else if (action === "web-ui") Quickshell.execDetached(["omarchy-launch-browser", webUrl])
+  }
   // Current preset: the last one picked. Panel changes save into it.
   readonly property string currentPreset: String(setting("preset", ""))
 
@@ -154,6 +176,7 @@ Panel {
     })
     var previous = status.camera
     status = next
+    if (next.camera === "tracking" || next.camera === "idle") lastMode = next.camera
     if (next.camera !== "idle" || ptzProc.running || motorProc.running) return
     if (previous === "privacy") restoreStatic(next)
     else if (previous === "tracking") readMotors(true)
@@ -453,9 +476,10 @@ Panel {
     active: root.camera === "tracking"
     dimmed: !root.online
     tooltipText: "EMEET PIXY: " + root.summary() + (root.currentPreset !== "" ? "\nPreset: " + root.currentPreset : "")
+      + "\nMiddle click: " + root.clickLabel(root.middleClick) + " \u00B7 Right click: " + root.clickLabel(root.rightClick)
     onPressed: function(b) {
-      if (b === Qt.RightButton) root.run(["toggle-privacy"])
-      else if (b === Qt.MiddleButton) Quickshell.execDetached(["omarchy-launch-browser", root.webUrl])
+      if (b === Qt.RightButton) root.runClick(root.rightClick)
+      else if (b === Qt.MiddleButton) root.runClick(root.middleClick)
       else root.toggle()
     }
   }
@@ -602,6 +626,20 @@ Panel {
           }
         }
 
+        Section {
+          title: "BAR BUTTON"
+          visible: root.tab === "position"
+          Text {
+            textFormat: Text.PlainText
+            text: "Left click: open this panel"
+            color: root.fg
+            opacity: 0.6
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
+          }
+          ClickRow { text: "Middle click"; value: root.middleClick; onPicked: function(v) { root.setSetting("middleClick", v) } }
+          ClickRow { text: "Right click"; value: root.rightClick; onPicked: function(v) { root.setSetting("rightClick", v) } }
+        }
         Section {
           title: "PAN · TILT · ZOOM"
           visible: root.tab === "position"
@@ -854,6 +892,35 @@ Panel {
     fontFamily: root.fontFamily
     fontSize: Style.font.bodySmall
     focusable: false
+  }
+
+  // One configurable bar-button click: label and action picker.
+  component ClickRow: Row {
+    id: crow
+    property string text: ""
+    property string value: ""
+    signal picked(string value)
+    width: parent ? parent.width : 0
+    spacing: Style.space(8)
+
+    Text {
+      width: Style.space(110)
+      anchors.verticalCenter: parent.verticalCenter
+      textFormat: Text.PlainText
+      text: crow.text
+      color: root.fg
+      opacity: 0.6
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+    Dropdown {
+      width: parent.width - Style.space(110) - parent.spacing
+      showLabel: false
+      value: crow.value
+      options: root.clickActions
+      fontFamily: root.fontFamily
+      onChanged: function(v) { crow.picked(v) }
+    }
   }
 
   component Action: Button {

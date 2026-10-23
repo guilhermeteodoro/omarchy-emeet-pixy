@@ -80,11 +80,18 @@ Update with `omarchy plugin update guilhermeteodoro.emeet-pixy`.
 
 ## Bar button
 
-| Input        | Action                                |
-|--------------|---------------------------------------|
-| Left click   | Open the panel                        |
-| Right click  | `toggle-privacy`                      |
-| Middle click | Open the daemon web UI                |
+Left click always opens the panel. Middle and right click are configurable in
+the panel (Position → Bar button) or as `middleClick` / `rightClick`:
+
+| Action           | Effect                                                  |
+|------------------|---------------------------------------------------------|
+| `static-track`   | Switch Static ↔ Track                                   |
+| `toggle-privacy` | Privacy ↔ the mode before it (Static or Track)          |
+| `web-ui`         | Open the daemon web UI                                  |
+| `none`           | Nothing                                                 |
+
+Defaults: middle `web-ui`, right `toggle-privacy`. The tooltip lists the current
+choices.
 
 The icon shows the webcam glyph, crossed out in privacy mode, in the urgent
 color while tracking, and dimmed when the daemon is unreachable. The tooltip
@@ -190,6 +197,8 @@ Edit the entry in `~/.config/omarchy/shell.json` or use the bar settings UI:
 | `followUsage`        | `true`                  | Follow camera use (Privacy settings tab)  |
 | `startPrivacy`       | `true`                  | Close the lens at login and on plug-in    |
 | `privacyDelaySec`    | `10`                    | Seconds to Privacy mode after a meeting   |
+| `middleClick`        | `web-ui`                | Bar button middle-click action            |
+| `rightClick`         | `toggle-privacy`        | Bar button right-click action             |
 | `preset`             | `""`                    | Current preset (preset bar)               |
 
 ## Keybindings
