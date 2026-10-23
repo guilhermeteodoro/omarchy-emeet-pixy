@@ -118,7 +118,6 @@ Panel {
     autosave.stop()
     positionDirty = false
     setSetting("preset", name)
-    knowAxes(["pan", "tilt", "zoom"])
     var extra = presetExtras[name] || {}
     var image = Controls.applyArgs(extra.image, controls)
     var gesture = extra.gesture === undefined ? "" : (extra.gesture ? "gesture-on" : "gesture-off")
@@ -152,27 +151,43 @@ Panel {
     })
     var previous = status.camera
     status = next
-    if (next.camera === "tracking") unknownAxes = { pan: true, tilt: true, zoom: true }
-    if (next.camera !== "idle" || ptzProc.running) return
+    if (next.camera !== "idle" || ptzProc.running || motorProc.running) return
     if (previous === "privacy") restoreStatic(next)
-    else if (!unknownAxes.pan && !unknownAxes.tilt && !unknownAxes.zoom) rememberStatic(next)
+    else if (previous === "tracking") readMotors(true)
+    else rememberStatic(next)
   }
 
-  // Tracking and privacy move the motors without anyone being told: neither
-  // the daemon nor V4L2 reports where they end up, and on this camera the
-  // firmware's GetMotorPos/SetMotorPresetPos answer with the same fixed reply
-  // whatever the position. So:
-  // - Tracking -> Static stays where tracking stopped and shows the axes as
-  //   unknown until the panel sets them (slider, Center, preset, restore).
-  // - Privacy -> Static returns to the last fully known Static position,
-  //   kept across restarts.
-  property var unknownAxes: ({ pan: false, tilt: false, zoom: false })
+  // Tracking moves the motors without telling the daemon or V4L2, which keep
+  // the last position that was *set*. Worse, UVC pan and tilt are one control,
+  // so a stale tilt rides along with the next pan. bin/motorpos reads the real
+  // position from the firmware (GET_MOTOR_POS over hidraw):
+  // - while tracking, the sliders follow it (panel open, once a second);
+  // - Tracking -> Static hands it to the daemon, so sliders, daemon and motors
+  //   agree again before anyone moves a slider.
+  // Privacy -> Static returns to the last Static position, kept across restarts.
+  property string hidraw: ""
+  property var livePosition: null
+  property bool adoptPending: false
   readonly property var staticPosition: setting("staticPosition", null)
 
-  function knowAxes(axes) {
-    var next = Object.assign({}, unknownAxes)
-    axes.forEach(function(a) { next[a] = false })
-    unknownAxes = next
+  function readMotors(adopt) {
+    if (hidraw === "" || motorProc.running) return
+    adoptPending = adopt
+    motorProc.running = true
+  }
+
+  function onMotorsRead(text) {
+    var v = String(text).trim().split(/\s+/).map(Number)
+    if (v.length !== 2 || isNaN(v[0]) || isNaN(v[1])) return
+    livePosition = { pan: v[0], tilt: v[1] }
+    if (!adoptPending) return
+    adoptPending = false
+    // Whole degrees: the motors move at most half a degree.
+    ptzProc.command = ["sh", "-c",
+      'PATH="$PATH:$HOME/.nix-profile/bin:$HOME/.local/bin"\n' +
+      '"$0" pan "$1" && "$0" tilt "$2"',
+      command, String(Math.round(v[0])), String(Math.round(v[1]))]
+    ptzProc.running = true
   }
 
   function rememberStatic(s) {
@@ -184,10 +199,9 @@ Panel {
   }
 
   // `center` first: the daemon would skip a move to the position it already
-  // believes in, but the motors are elsewhere.
+  // believes in, but privacy moved the motors elsewhere.
   function restoreStatic(s) {
     var p = staticPosition || { pan: Number(s.pan) || 0, tilt: Number(s.tilt) || 0, zoom: Number(s.zoom) || 100 }
-    knowAxes(["pan", "tilt", "zoom"])
     ptzProc.command = ["sh", "-c",
       'PATH="$PATH:$HOME/.nix-profile/bin:$HOME/.local/bin"\n' +
       '"$0" center && "$0" pan "$1" && "$0" tilt "$2" && "$0" zoom "$3"',
@@ -276,7 +290,7 @@ Panel {
   onFollowUsageChanged: if (followUsage) run(["auto-off"])
 
   onOpenedChanged: if (opened) { refresh(); presetsProc.running = true; refreshControls() }
-  onDeviceChanged: if (opened) refreshControls()
+  onDeviceChanged: { if (opened) refreshControls(); deviceProc.running = true }
   onCommandChanged: refresh()
   // sync first: the watcher's first poll adopts the camera state, so it must
   // be the hardware's, not whatever the daemon last believed.
@@ -334,6 +348,33 @@ Panel {
     id: ptzProc
     // No autosave: these positions come from the camera, not from the user.
     onExited: root.refresh()
+  }
+
+  // emeet-pixy device -> "/dev/videoN /dev/hidrawM MODEL"
+  Process {
+    id: deviceProc
+    command: root.argv(["device"])
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var m = String(text).match(/\/dev\/hidraw\d+/)
+        root.hidraw = m ? m[0] : ""
+      }
+    }
+  }
+
+  Process {
+    id: motorProc
+    command: [Qt.resolvedUrl("bin/motorpos").toString().replace(/^file:\/\//, ""), root.hidraw]
+    stdout: StdioCollector { waitForEnd: true; onStreamFinished: root.onMotorsRead(text) }
+  }
+
+  Timer {
+    interval: 1000
+    running: root.opened && root.camera === "tracking" && root.hidraw !== ""
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: root.readMotors(false)
   }
 
   FileView {
@@ -509,7 +550,7 @@ Panel {
             width: parent.width
             wrapMode: Text.WordWrap
             textFormat: Text.PlainText
-            text: "Position controls work in Static mode."
+            text: "Position controls work in Static mode; while tracking they show where the motors are."
             color: root.fg
             opacity: 0.6
             font.family: root.fontFamily
@@ -521,24 +562,13 @@ Panel {
             // Tracking and privacy drive the motors themselves.
             enabled: root.camera === "idle"
             opacity: enabled ? 1.0 : 0.4
-            SliderRow { text: "\u{F0BB8} pan"; labelWidth: Style.space(70); unknown: root.unknownAxes.pan; minimum: -150; maximum: 150; current: Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]); root.knowAxes(["pan"]); root.noteChange(true) } }
-            SliderRow { text: "\u{F0BBE} tilt"; labelWidth: Style.space(70); unknown: root.unknownAxes.tilt; minimum: -90; maximum: 90; current: Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]); root.knowAxes(["tilt"]); root.noteChange(true) } }
-            SliderRow { text: "\u{F06ED} zoom"; labelWidth: Style.space(70); unknown: root.unknownAxes.zoom; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.knowAxes(["zoom"]); root.noteChange(true) } }
-          }
-          Text {
-            visible: root.camera === "idle" && (root.unknownAxes.pan || root.unknownAxes.tilt || root.unknownAxes.zoom)
-            width: parent.width
-            wrapMode: Text.WordWrap
-            textFormat: Text.PlainText
-            text: "The camera can't report where tracking left it (—). Move a slider or press Center to set it."
-            color: root.fg
-            opacity: 0.6
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.caption
+            SliderRow { text: "\u{F0BB8} pan"; labelWidth: Style.space(70); minimum: -150; maximum: 150; current: root.camera === "tracking" && root.livePosition ? root.livePosition.pan : Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]); root.noteChange(true) } }
+            SliderRow { text: "\u{F0BBE} tilt"; labelWidth: Style.space(70); minimum: -90; maximum: 90; current: root.camera === "tracking" && root.livePosition ? root.livePosition.tilt : Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]); root.noteChange(true) } }
+            SliderRow { text: "\u{F06ED} zoom"; labelWidth: Style.space(70); minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.noteChange(true) } }
           }
           Row {
             spacing: Style.space(6)
-            Action { iconText: "\u{F01A4}"; text: "Center"; enabled: root.camera === "idle"; opacity: enabled ? 1.0 : 0.4; onClicked: { root.run(["center"]); root.knowAxes(["pan", "tilt", "zoom"]); root.noteChange(true) } }
+            Action { iconText: "\u{F01A4}"; text: "Center"; enabled: root.camera === "idle"; opacity: enabled ? 1.0 : 0.4; onClicked: { root.run(["center"]); root.noteChange(true) } }
             Action { iconText: "\u{F0450}"; text: "Sync"; onClicked: root.run(["sync"]) }
             Action { iconText: "\u{F059F}"; text: "Web UI"; onClicked: { Quickshell.execDetached(["omarchy-launch-browser", root.webUrl]); root.close() } }
           }
@@ -734,8 +764,6 @@ Panel {
     property real maximum: 0
     property real step: 1
     property real current: 0
-    // Position unreadable (after tracking): show "—" instead of a stale value.
-    property bool unknown: false
     signal committed(int value)
     signal reset()
     width: parent ? parent.width : 0
@@ -769,7 +797,7 @@ Panel {
       anchors.verticalCenter: parent.verticalCenter
       horizontalAlignment: Text.AlignRight
       textFormat: Text.PlainText
-      text: srow.unknown && !slider.dragging ? "—" : String(Math.round(slider.liveValue))
+      text: String(Math.round(slider.liveValue))
       color: root.fg
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall

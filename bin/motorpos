@@ -1,0 +1,38 @@
+#!/usr/bin/python3
+# Prints the live motor position of an EMEET PIXY as "<pan> <tilt>" degrees.
+# argv[1] = the camera's hidraw node (`emeet-pixy device`, second field).
+#
+# V4L2 and emeet-pixyd only know the last position that was *set*; tracking
+# moves the motors on its own. The firmware reports the real position through
+# CMD_GET_MOTOR_POS, recovered from EMEET STUDIO 2.0.4 (macOS,
+# EMHidCmdHelper::hidCmdSendGetMotorPos / hidCmdParseGetMotorPos):
+#   request: head 09 63 01 01, then the HID v2 frame
+#            [packet index u8][total length u16 LE][chunk length u8][payload]
+#            with payload [motor u8] (1 = pan/yaw, 2 = tilt/pitch)
+#   reply:   same head, frame, payload [motor u8][target f32][current f32]
+# Read-only: nothing moves. Absolute /usr/bin/python3: mise may shadow python.
+import os, select, struct, sys
+
+GET_MOTOR_POS = bytes([0x09, 0x63, 0x01, 0x01])
+PAN, TILT = 1, 2
+
+
+def current(fd, motor):
+    payload = bytes([motor])
+    frame = GET_MOTOR_POS + bytes([0]) + struct.pack("<H", len(payload)) + bytes([len(payload)]) + payload
+    os.write(fd, frame + bytes(32 - len(frame)))
+    while True:
+        ready, _, _ = select.select([fd], [], [], 1.0)
+        if not ready:
+            raise TimeoutError
+        reply = os.read(fd, 64)
+        # Skip replies to other commands (the daemon shares the device).
+        if len(reply) >= 17 and reply[0] == 0x09 and reply[1] & 0x1F == 0x03 and reply[2:4] == GET_MOTOR_POS[2:4] and reply[8] == motor:
+            return struct.unpack("<f", reply[13:17])[0]
+
+
+try:
+    fd = os.open(sys.argv[1], os.O_RDWR)
+    print("%.2f %.2f" % (current(fd, PAN), current(fd, TILT)))
+except (OSError, IndexError, TimeoutError):
+    sys.exit(1)

@@ -80,17 +80,28 @@ preset bar below them on both; the last tab is kept for the next open:
 ### Static position
 
 Pan, tilt, zoom and Center are enabled only in Static: tracking and privacy
-drive the motors themselves, and nothing can read where they leave them.
-emeet-pixyd and V4L2 keep reporting the last position that was *set*; on the
-PIXY (4K, `328f:00c0`) the firmware's `CMD_GET_MOTOR_POS` (`09 63 01 02`) and
-`CMD_SET_MOTOR_PRESET_POS` answer with the same fixed reply
-(`… 00 02 00 02 00 40`) whatever the position, so live polling is not possible.
+drive the motors themselves. emeet-pixyd and V4L2 only know the last position
+that was *set*, and UVC pan/tilt is a single control, so after tracking a pan
+change would send the stale tilt along with it.
 
-- **Tracking → Static** stops where tracking left the camera. The panel shows
-  each axis as "—" until it is set again (slider, Center, preset load).
-- **Privacy → Static** (panel, right click or CLI) returns to the last fully
-  known Static position (`staticPosition` setting), through `center` because
-  the daemon would skip a move to a position it already believes in.
+`bin/motorpos` reads the real position from the firmware over hidraw
+(`CMD_GET_MOTOR_POS`, recovered from EMEET STUDIO 2.0.4; see the comment in the
+script for the byte layout):
+
+- **While tracking**, the pan/tilt sliders follow the motors (once a second
+  while the panel is open).
+- **Tracking → Static** hands the real position to the daemon (`pan`/`tilt`,
+  rounded to whole degrees), so sliders, daemon and motors agree before the
+  next move.
+- **Privacy → Static** (panel, right click or CLI) returns to the last Static
+  position (`staticPosition` setting), through `center` because the daemon
+  would skip a move to a position it already believes in.
+
+emeet-pixyd's own HID motor frames (`setMotorPos`, `speed`) put the payload
+right after the 4-byte head; the firmware expects the HID v2 frame
+`[index u8][total length u16 LE][chunk length u8][payload]`, and this app's
+command table is shifted by one from the one in upstream's `tools/emhid`
+(`…01 01` = GET_MOTOR_POS, `…01 02` = SET_MOTOR_SPEED, motors 1 = pan, 2 = tilt).
 
 ### Presets
 
