@@ -170,16 +170,32 @@ Panel {
   // position and the privacy timer need it, and so does emeet-pixyd.
   property bool hidrawAccess: true
   property bool udevInstalled: false
+  property bool legacyRule: false
   readonly property string udevTarget: "/etc/udev/rules.d/70-emeet-pixy.rules"
+  readonly property string legacyTarget: "/etc/udev/rules.d/99-emeet-pixyd.rules"
+  // What the access button does, phrased as the user's intent.
+  readonly property string accessAction: udevInstalled ? "Remove access rule"
+    : (legacyRule ? "Replace old rule" : "Install access rule")
+  readonly property string accessStatus: {
+    if (udevInstalled) return hidrawAccess
+      ? "Plugin rule installed: only you (the logged-in user) can control " + hidraw + "."
+      : "Plugin rule installed, but " + hidraw + " is still not writable: replug the camera."
+    if (legacyRule) return hidrawAccess
+      ? "Working through the old 99-emeet-pixyd.rules, which lets every account on this machine control the camera."
+      : "Old 99-emeet-pixyd.rules present, but " + hidraw + " is not writable."
+    return hidrawAccess
+      ? "Working through a rule this plugin does not know."
+      : "No access to " + hidraw + ": live position, the privacy timer and emeet-pixyd's controls do not work."
+  }
   readonly property string udevRule: Qt.resolvedUrl("udev/70-emeet-pixy.rules").toString().replace(/^file:\/\//, "")
 
   // pkexec: the panel has no terminal for a sudo prompt. Installing also drops
   // the hand-written world-writable rule this one replaces.
   function setUdevRule(install) {
     udevProc.command = ["pkexec", "sh", "-c", install
-      ? 'install -m644 "$1" "$2" && rm -f /etc/udev/rules.d/99-emeet-pixyd.rules && udevadm control --reload && udevadm trigger -s hidraw'
+      ? 'install -m644 "$1" "$2" && rm -f "$3" && udevadm control --reload && udevadm trigger -s hidraw'
       : 'rm -f "$2" && udevadm control --reload && udevadm trigger -s hidraw',
-      "sh", udevRule, udevTarget]
+      "sh", udevRule, udevTarget, legacyTarget]
     udevProc.running = true
   }
 
@@ -412,13 +428,14 @@ Panel {
 
   Process {
     id: accessProc
-    command: ["sh", "-c", 'test -e "$1"; i=$?; test -w "$2"; echo "$i $?"', "sh", root.udevTarget, root.hidraw]
+    command: ["sh", "-c", 'test -e "$1"; a=$?; test -e "$2"; b=$?; test -w "$3"; echo "$a $b $?"', "sh", root.udevTarget, root.legacyTarget, root.hidraw]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
         var v = String(text).trim().split(" ")
         root.udevInstalled = v[0] === "0"
-        root.hidrawAccess = v[1] === "0"
+        root.legacyRule = v[1] === "0"
+        root.hidrawAccess = v[2] === "0"
       }
     }
   }
@@ -743,17 +760,23 @@ Panel {
         Section {
           title: "DEVICE ACCESS"
           visible: root.tab === "position" && root.hidraw !== ""
-          Toggle {
+          Text {
             width: parent.width
-            label: "Camera HID access (udev rule)"
-            description: root.udevInstalled
-              ? "Plugin rule installed: the logged-in user can reach " + root.hidraw + ". Turning it off removes it (asks for your password)"
-              : (root.hidrawAccess
-                ? "Working through another rule; install the plugin's, logged-in user only (asks for your password)"
-                : "Needed for live position, the privacy timer and emeet-pixyd (asks for your password)")
-            checked: root.udevInstalled
-            foreground: root.fg
-            fontFamily: root.fontFamily
+            wrapMode: Text.WordWrap
+            textFormat: Text.PlainText
+            text: root.accessStatus
+            color: root.fg
+            opacity: 0.8
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+          }
+          Action {
+            iconText: root.udevInstalled ? "\u{F01B4}" : "\u{F0565}"
+            text: udevProc.running ? "Waiting for password…" : root.accessAction
+            enabled: !udevProc.running
+            tooltipText: root.udevInstalled
+              ? "Deletes " + root.udevTarget + ". The camera's HID controls stop working for your user."
+              : "Installs " + root.udevTarget + (root.legacyRule ? " and deletes " + root.legacyTarget : "") + ". Asks for your password."
             onClicked: root.setUdevRule(!root.udevInstalled)
           }
         }

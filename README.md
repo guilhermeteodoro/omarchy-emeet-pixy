@@ -56,9 +56,11 @@ camera shows as an extra choice.
 
 emeet-pixyd and the plugin's HID helpers need write access to the camera's
 hidraw node. `udev/70-emeet-pixy.rules` grants it to the logged-in user only
-(`TAG+="uaccess"`). The "Camera HID access" switch at the end of the Position
-tab installs or removes it through `pkexec` (a password dialog), and installing
-also removes a hand-written `/etc/udev/rules.d/99-emeet-pixyd.rules`. By hand:
+(`TAG+="uaccess"`). "Device access", at the end of the Position tab, says how
+the camera is reachable right now and offers the matching action: Install
+access rule, Replace old rule (also deletes a hand-written world-writable
+`/etc/udev/rules.d/99-emeet-pixyd.rules`) or Remove access rule, through
+`pkexec` (a password dialog). By hand:
 
 ```bash
 sudo install -m644 udev/70-emeet-pixy.rules /etc/udev/rules.d/
