@@ -79,8 +79,8 @@ preset bar below them on both; the last tab is kept for the next open:
 
 ### Static position
 
-Pan, tilt, zoom and Center are enabled only in Static: tracking and privacy
-drive the motors themselves. emeet-pixyd and V4L2 only know the last position
+Pan, tilt and Center are enabled only in Static: tracking and privacy drive
+those motors themselves. Zoom also works while tracking. emeet-pixyd and V4L2 only know the last position
 that was *set*, and UVC pan/tilt is a single control, so after tracking a pan
 change would send the stale tilt along with it.
 

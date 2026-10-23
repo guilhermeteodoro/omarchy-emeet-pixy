@@ -550,7 +550,7 @@ Panel {
             width: parent.width
             wrapMode: Text.WordWrap
             textFormat: Text.PlainText
-            text: "Position controls work in Static mode; while tracking they show where the motors are."
+            text: "Pan, tilt and Center work in Static; while tracking they show where the motors are. Zoom works in Static and Track."
             color: root.fg
             opacity: 0.6
             font.family: root.fontFamily
@@ -559,13 +559,14 @@ Panel {
           Column {
             width: parent.width
             spacing: Style.space(8)
-            // Tracking and privacy drive the motors themselves.
+            // Tracking and privacy drive pan/tilt themselves.
             enabled: root.camera === "idle"
             opacity: enabled ? 1.0 : 0.4
             SliderRow { text: "\u{F0BB8} pan"; labelWidth: Style.space(70); minimum: -150; maximum: 150; current: root.camera === "tracking" && root.livePosition ? root.livePosition.pan : Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]); root.noteChange(true) } }
             SliderRow { text: "\u{F0BBE} tilt"; labelWidth: Style.space(70); minimum: -90; maximum: 90; current: root.camera === "tracking" && root.livePosition ? root.livePosition.tilt : Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]); root.noteChange(true) } }
-            SliderRow { text: "\u{F06ED} zoom"; labelWidth: Style.space(70); minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.noteChange(true) } }
           }
+          // Zoom is not moved by tracking, so it stays usable there.
+          SliderRow { text: "\u{F06ED} zoom"; labelWidth: Style.space(70); enabled: root.camera === "idle" || root.camera === "tracking"; opacity: enabled ? 1.0 : 0.4; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.noteChange(true) } }
           Row {
             spacing: Style.space(6)
             Action { iconText: "\u{F01A4}"; text: "Center"; enabled: root.camera === "idle"; opacity: enabled ? 1.0 : 0.4; onClicked: { root.run(["center"]); root.noteChange(true) } }
