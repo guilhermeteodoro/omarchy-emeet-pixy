@@ -83,13 +83,13 @@ Update with `omarchy plugin update guilhermeteodoro.emeet-pixy`.
 ## Remove
 
 ```bash
-omarchy plugin remove guilhermeteodoro.emeet-pixy
-sudo rm /etc/udev/rules.d/70-emeet-pixy.rules && sudo udevadm control --reload   # if install.sh ran
-rm -f ~/.config/omarchy/emeet-pixy-presets.json                                  # optional: preset extras
+~/.config/omarchy/plugins/guilhermeteodoro.emeet-pixy/uninstall.sh   # asks for sudo if install.sh ran
 ```
 
-emeet-pixyd keeps its own presets and state; uninstall it separately if you no
-longer need it.
+It removes the udev rule that `install.sh` installed, then runs `omarchy plugin
+remove`. Your preset extras (`~/.config/omarchy/emeet-pixy-presets.json`) and
+emeet-pixyd, with its own presets and state, are kept; delete or uninstall them
+separately if you no longer need them.
 
 ## Bar button
 
