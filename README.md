@@ -80,6 +80,17 @@ to copy.
 
 Update with `omarchy plugin update guilhermeteodoro.emeet-pixy`.
 
+## Remove
+
+```bash
+omarchy plugin remove guilhermeteodoro.emeet-pixy
+sudo rm /etc/udev/rules.d/70-emeet-pixy.rules && sudo udevadm control --reload   # if install.sh ran
+rm -f ~/.config/omarchy/emeet-pixy-presets.json                                  # optional: preset extras
+```
+
+emeet-pixyd keeps its own presets and state; uninstall it separately if you no
+longer need it.
+
 ## Bar button
 
 Left click always opens the panel. Middle and right click are configurable in
