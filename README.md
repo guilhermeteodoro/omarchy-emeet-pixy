@@ -25,7 +25,9 @@ returns `EBUSY` while another process owns the stream; just holding the device
 open, as browsers do, does not count) or any app records audio (PipeWire
 capture streams):
 
-- in use for ~4s: `track` plus the current preset's audio mode (`nc` without one);
+- in use for ~4s: the **Meeting starts in** mode (`meetingMode`: `track`, the
+  default, or `idle` = Static, which returns to the last Static position) plus
+  the current preset's audio mode (`nc` without one);
 - idle for `privacyDelaySec` seconds (default 10): `privacy`.
 
 emeet-pixyd's own auto mode is switched off so the two never fight. At startup
@@ -93,15 +95,16 @@ the panel (Privacy settings → Bar button) or as `middleClick` / `rightClick`:
 Defaults: middle `web-ui`, right `toggle-privacy`. The tooltip lists the current
 choices.
 
-The icon shows the webcam glyph, crossed out in privacy mode, in the urgent
-color while tracking, and dimmed when the daemon is unreachable. The tooltip
-shows the mode, audio mode and call state.
+The icon shows the webcam glyph, crossed out in privacy mode, green in Static
+and blue while tracking (like the camera's LED), and dimmed when the daemon is
+unreachable. The tooltip shows the mode, audio mode and call state.
 
 ## Panel
 Three tabs (Position, Image, Privacy settings), switched by click or
 Left/Right (h/l), with the preset bar below them on all; the last tab is kept
-for the next open. Privacy settings holds Follow camera use, Start in Privacy
-mode, Keep camera awake during meetings and the delay after a meeting:
+for the next open. Privacy settings holds Follow camera use, Meeting starts in,
+Start in Privacy mode, Keep camera awake during meetings and the delay after a
+meeting:
 
 | Tab      | Section    | Controls                                  | Command                                  |
 |----------|------------|-------------------------------------------|------------------------------------------|
@@ -195,6 +198,7 @@ Edit the entry in `~/.config/omarchy/shell.json` or use the bar settings UI:
 | `refreshIntervalSec` | `5`                     | Poll interval while the panel is closed   |
 | `webUrl`             | `http://127.0.0.1:8090` | Daemon web UI (`EMEET_PIXYD_WEB_ADDR`)    |
 | `followUsage`        | `true`                  | Follow camera use (Privacy settings tab)  |
+| `meetingMode`        | `track`                 | Meeting opens the lens in `track`/`idle`  |
 | `startPrivacy`       | `true`                  | Close the lens at login and on plug-in    |
 | `privacyDelaySec`    | `10`                    | Seconds to Privacy mode after a meeting   |
 | `middleClick`        | `web-ui`                | Bar button middle-click action            |

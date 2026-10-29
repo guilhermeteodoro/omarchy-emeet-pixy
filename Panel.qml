@@ -23,6 +23,9 @@ Panel {
   // Close the lens at login and when the camera is plugged in (it powers up
   // at its firmware home position with the lens open).
   readonly property bool startPrivacy: setting("startPrivacy", true) === true
+  // Mode the follower opens the lens in when a meeting starts: `track`, or
+  // `idle` (Static), which returns to the last Static position.
+  readonly property string meetingMode: setting("meetingMode", "track") === "idle" ? "idle" : "track"
   // Bar button: left always opens the panel; middle and right are configurable.
   readonly property string middleClick: String(setting("middleClick", "web-ui"))
   readonly property string rightClick: String(setting("rightClick", "toggle-privacy"))
@@ -49,6 +52,9 @@ Panel {
   readonly property string currentPreset: String(setting("preset", ""))
 
   readonly property color fg: bar ? bar.foreground : Color.foreground
+  // Bar icon colors, matching the camera's own LED.
+  readonly property color staticColor: "#22c55e"
+  readonly property color trackColor: "#3b82f6"
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
   // Parsed `status`: camera, audio, gesture, pan, tilt, zoom, in_call, auto, device.
@@ -314,7 +320,7 @@ Panel {
     if (!wasPrimed && !inUse) applyCurrentImage()
     if (r.action === "track") {
       var extra = presetExtras[currentPreset]
-      run(["track"])
+      run([meetingMode])
       run(["audio", extra && extra.audio ? extra.audio : "nc"])
     } else if (r.action === "privacy") {
       run(["privacy"])
@@ -473,7 +479,8 @@ Panel {
     anchors.fill: parent
     bar: root.bar
     text: root.cameraIcon()
-    active: root.camera === "tracking"
+    active: root.camera === "tracking" || root.camera === "idle"
+    activeColor: root.camera === "tracking" ? root.trackColor : root.staticColor
     dimmed: !root.online
     tooltipText: "EMEET PIXY: " + root.summary() + (root.currentPreset !== "" ? "\nPreset: " + root.currentPreset : "")
       + "\nMiddle click: " + root.clickLabel(root.middleClick) + " \u00B7 Right click: " + root.clickLabel(root.rightClick)
@@ -684,6 +691,17 @@ Panel {
             fontFamily: root.fontFamily
             onClicked: root.setSetting("followUsage", !root.followUsage)
           }
+          PickRow {
+            text: "Meeting starts in"
+            value: root.meetingMode
+            options: [
+              { value: "track", label: "Track" },
+              { value: "idle", label: "Static (last position)" }
+            ]
+            enabled: root.followUsage
+            opacity: enabled ? 1.0 : 0.4
+            onPicked: function(v) { root.setSetting("meetingMode", v) }
+          }
           Toggle {
             width: parent.width
             label: "Start in Privacy mode"
@@ -731,8 +749,8 @@ Panel {
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
           }
-          ClickRow { text: "Middle click"; value: root.middleClick; onPicked: function(v) { root.setSetting("middleClick", v) } }
-          ClickRow { text: "Right click"; value: root.rightClick; onPicked: function(v) { root.setSetting("rightClick", v) } }
+          PickRow { text: "Middle click"; value: root.middleClick; onPicked: function(v) { root.setSetting("middleClick", v) } }
+          PickRow { text: "Right click"; value: root.rightClick; onPicked: function(v) { root.setSetting("rightClick", v) } }
         }
 
         Section {
@@ -897,11 +915,12 @@ Panel {
     focusable: false
   }
 
-  // One configurable bar-button click: label and action picker.
-  component ClickRow: Row {
+  // A labelled setting picker (defaults to the bar-button click actions).
+  component PickRow: Row {
     id: crow
     property string text: ""
     property string value: ""
+    property var options: root.clickActions
     signal picked(string value)
     width: parent ? parent.width : 0
     spacing: Style.space(8)
@@ -920,7 +939,7 @@ Panel {
       width: parent.width - Style.space(110) - parent.spacing
       showLabel: false
       value: crow.value
-      options: root.clickActions
+      options: crow.options
       fontFamily: root.fontFamily
       onChanged: function(v) { crow.picked(v) }
     }

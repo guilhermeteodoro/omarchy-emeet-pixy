@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "guilhermeteodoro.emeet-pixy",
   "name": "EMEET PIXY",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "Guilherme Teodoro",
   "license": "MIT",
   "description": "Control the EMEET PIXY webcam through emeet-pixyd from an Omarchy Quattro bar widget.",
@@ -29,6 +29,7 @@
       "refreshIntervalSec": 5,
       "webUrl": "http://127.0.0.1:8090",
       "followUsage": true,
+      "meetingMode": "track",
       "preset": "",
       "startPrivacy": true,
       "privacyDelaySec": 10,
@@ -64,8 +65,19 @@
         "key": "followUsage",
         "type": "boolean",
         "label": "Follow camera use",
-        "description": "Track and switch to noise cancel ~4s after an app uses the camera or microphone; privacy ~10s after it stops. Turns emeet-pixyd's own auto mode off.",
+        "description": "Open the lens (Meeting starts in) and switch to the preset's audio mode ~4s after an app uses the camera or microphone; privacy ~10s after it stops. Turns emeet-pixyd's own auto mode off.",
         "defaultValue": true
+      },
+      {
+        "key": "meetingMode",
+        "type": "enum",
+        "label": "Meeting starts in",
+        "options": [
+          "track",
+          "idle"
+        ],
+        "defaultValue": "track",
+        "description": "Mode Follow camera use opens the lens in: track, or idle (Static), which returns to the last Static position."
       },
       {
         "key": "startPrivacy",
