@@ -53,7 +53,7 @@ Panel {
 
   readonly property color fg: bar ? bar.foreground : Color.foreground
   // Bar icon colors, matching the camera's own LED.
-  readonly property color staticColor: "#22c55e"
+  readonly property color staticColor: "#4ade80"
   readonly property color trackColor: "#3b82f6"
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
