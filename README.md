@@ -112,7 +112,7 @@ meeting:
 |          |            | Face / Half body / Full body              | `tracking <variant>`                     |
 |          | Audio      | Noise cancel / Live / Original            | `audio nc\|live\|org`                    |
 |          | Automation | Gesture control                           | `toggle-gesture`                         |
-|          | PTZ        | Pan (±150), tilt (±90), zoom (100–150), Static only | `pan`, `tilt`, `zoom` (sent on release)  |
+|          | PTZ        | Pan (±150), tilt (±90), zoom (100–150), Static only; < > step 5 | `pan`, `tilt`, `zoom` (sent on release or click) |
 |          |            | Center, Sync, Web UI                      | `center`, `sync`                         |
 | Image    | Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`     |
 |          |            | Reset image to defaults                   | one `v4l2-ctl -c` with all defaults      |

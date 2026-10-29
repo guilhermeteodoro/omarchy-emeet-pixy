@@ -653,11 +653,11 @@ Panel {
             // Tracking and privacy drive pan/tilt themselves.
             enabled: root.camera === "idle"
             opacity: enabled ? 1.0 : 0.4
-            SliderRow { text: "\u{F0BB8} pan"; labelWidth: Style.space(70); minimum: -150; maximum: 150; current: root.camera === "tracking" && root.livePosition ? root.livePosition.pan : Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]); root.noteChange(true) } }
-            SliderRow { text: "\u{F0BBE} tilt"; labelWidth: Style.space(70); minimum: -90; maximum: 90; current: root.camera === "tracking" && root.livePosition ? root.livePosition.tilt : Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]); root.noteChange(true) } }
+            SliderRow { text: "\u{F0BB8} pan"; labelWidth: Style.space(70); arrowStep: 5; minimum: -150; maximum: 150; current: root.camera === "tracking" && root.livePosition ? root.livePosition.pan : Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]); root.noteChange(true) } }
+            SliderRow { text: "\u{F0BBE} tilt"; labelWidth: Style.space(70); arrowStep: 5; minimum: -90; maximum: 90; current: root.camera === "tracking" && root.livePosition ? root.livePosition.tilt : Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]); root.noteChange(true) } }
           }
           // Zoom is not moved by tracking, so it stays usable there.
-          SliderRow { text: "\u{F06ED} zoom"; labelWidth: Style.space(70); enabled: root.camera === "idle" || root.camera === "tracking"; opacity: enabled ? 1.0 : 0.4; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.noteChange(true) } }
+          SliderRow { text: "\u{F06ED} zoom"; labelWidth: Style.space(70); arrowStep: 5; enabled: root.camera === "idle" || root.camera === "tracking"; opacity: enabled ? 1.0 : 0.4; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.noteChange(true) } }
           Row {
             spacing: Style.space(6)
             Action { iconText: "\u{F01A4}"; text: "Center"; enabled: root.camera === "idle"; opacity: enabled ? 1.0 : 0.4; onClicked: { root.run(["center"]); root.noteChange(true) } }
@@ -962,8 +962,15 @@ Panel {
     property real maximum: 0
     property real step: 1
     property real current: 0
+    // > 0 adds < > buttons that move by this much (PTZ rows).
+    property real arrowStep: 0
     signal committed(int value)
     signal reset()
+    function nudge(dir) {
+      var v = Math.max(minimum, Math.min(maximum, Math.round(slider.liveValue) + dir * arrowStep))
+      slider.liveValue = v
+      committed(v)
+    }
     width: parent ? parent.width : 0
     spacing: Style.space(8)
 
@@ -978,10 +985,12 @@ Panel {
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
     }
+    Action { id: less; visible: srow.arrowStep > 0; anchors.verticalCenter: parent.verticalCenter; iconText: "\u{F0141}"; onClicked: srow.nudge(-1) }
     PanelSlider {
       id: slider
       bar: root.bar
       width: parent.width - srow.labelWidth - Style.space(44) - parent.spacing * 2
+        - (srow.arrowStep > 0 ? less.width + more.width + parent.spacing * 2 : 0)
       minimum: srow.minimum
       maximum: srow.maximum
       step: srow.step
@@ -990,6 +999,7 @@ Panel {
       onReleased: function(v) { srow.committed(Math.round(v)) }
       onRightClicked: srow.reset()
     }
+    Action { id: more; visible: srow.arrowStep > 0; anchors.verticalCenter: parent.verticalCenter; iconText: "\u{F0142}"; onClicked: srow.nudge(1) }
     Text {
       width: Style.space(44)
       anchors.verticalCenter: parent.verticalCenter
