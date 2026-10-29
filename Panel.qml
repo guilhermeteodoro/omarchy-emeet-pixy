@@ -985,7 +985,7 @@ Panel {
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
     }
-    Action { id: less; visible: srow.arrowStep > 0; anchors.verticalCenter: parent.verticalCenter; iconText: "\u{F0141}"; onClicked: srow.nudge(-1) }
+    Action { id: less; visible: srow.arrowStep > 0; bordered: false; horizontalPadding: 0; verticalPadding: 0; iconSize: Style.font.bodySmall; anchors.verticalCenter: parent.verticalCenter; iconText: "\u{F0141}"; onClicked: srow.nudge(-1) }
     PanelSlider {
       id: slider
       bar: root.bar
@@ -999,7 +999,7 @@ Panel {
       onReleased: function(v) { srow.committed(Math.round(v)) }
       onRightClicked: srow.reset()
     }
-    Action { id: more; visible: srow.arrowStep > 0; anchors.verticalCenter: parent.verticalCenter; iconText: "\u{F0142}"; onClicked: srow.nudge(1) }
+    Action { id: more; visible: srow.arrowStep > 0; bordered: false; horizontalPadding: 0; verticalPadding: 0; iconSize: Style.font.bodySmall; anchors.verticalCenter: parent.verticalCenter; iconText: "\u{F0142}"; onClicked: srow.nudge(1) }
     Text {
       width: Style.space(44)
       anchors.verticalCenter: parent.verticalCenter
