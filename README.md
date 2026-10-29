@@ -112,7 +112,7 @@ meeting:
 |          |            | Face / Half body / Full body              | `tracking <variant>`                     |
 |          | Audio      | Noise cancel / Live / Original            | `audio nc\|live\|org`                    |
 |          | Automation | Gesture control                           | `toggle-gesture`                         |
-|          | PTZ        | Pan (±150), tilt (±90), zoom (100–150), Static only; < > step 1 | `pan`, `tilt`, `zoom` (sent on release or click) |
+|          | PTZ        | Pan (±150), tilt (±90), zoom (100–150), Static only | `pan`, `tilt`, `zoom` (sent on release) |
 |          |            | Center, Sync, Web UI                      | `center`, `sync`                         |
 | Image    | Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`     |
 |          |            | Reset image to defaults                   | one `v4l2-ctl -c` with all defaults      |
@@ -176,7 +176,7 @@ power-line frequency, white balance (auto/temperature), auto exposure
 (manual/aperture priority), exposure time and focus (auto/absolute). Pan, tilt
 and zoom are left out because emeet-pixyd owns the motors. A control that an
 auto mode governs (exposure time under aperture priority, focus under
-continuous autofocus) is dimmed until you switch that auto mode off. Right click
+continuous autofocus) is dimmed until you switch that auto mode off. Every slider has < > buttons that move it one step. Right click
 a slider to reset that control. The parser test runs with `node Controls.test.js`.
 
 Editing the plugin: keep the checkout anywhere and symlink it to

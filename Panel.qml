@@ -653,11 +653,11 @@ Panel {
             // Tracking and privacy drive pan/tilt themselves.
             enabled: root.camera === "idle"
             opacity: enabled ? 1.0 : 0.4
-            SliderRow { text: "\u{F0BB8} pan"; labelWidth: Style.space(70); arrowStep: 1; minimum: -150; maximum: 150; current: root.camera === "tracking" && root.livePosition ? root.livePosition.pan : Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]); root.noteChange(true) } }
-            SliderRow { text: "\u{F0BBE} tilt"; labelWidth: Style.space(70); arrowStep: 1; minimum: -90; maximum: 90; current: root.camera === "tracking" && root.livePosition ? root.livePosition.tilt : Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]); root.noteChange(true) } }
+            SliderRow { text: "\u{F0BB8} pan"; labelWidth: Style.space(70); minimum: -150; maximum: 150; current: root.camera === "tracking" && root.livePosition ? root.livePosition.pan : Number(root.status.pan || 0); onCommitted: function(v) { root.run(["pan", String(v)]); root.noteChange(true) } }
+            SliderRow { text: "\u{F0BBE} tilt"; labelWidth: Style.space(70); minimum: -90; maximum: 90; current: root.camera === "tracking" && root.livePosition ? root.livePosition.tilt : Number(root.status.tilt || 0); onCommitted: function(v) { root.run(["tilt", String(v)]); root.noteChange(true) } }
           }
           // Zoom is not moved by tracking, so it stays usable there.
-          SliderRow { text: "\u{F06ED} zoom"; labelWidth: Style.space(70); arrowStep: 1; enabled: root.camera === "idle" || root.camera === "tracking"; opacity: enabled ? 1.0 : 0.4; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.noteChange(true) } }
+          SliderRow { text: "\u{F06ED} zoom"; labelWidth: Style.space(70); enabled: root.camera === "idle" || root.camera === "tracking"; opacity: enabled ? 1.0 : 0.4; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.noteChange(true) } }
           Row {
             spacing: Style.space(6)
             Action { iconText: "\u{F01A4}"; text: "Center"; enabled: root.camera === "idle"; opacity: enabled ? 1.0 : 0.4; onClicked: { root.run(["center"]); root.noteChange(true) } }
@@ -962,8 +962,8 @@ Panel {
     property real maximum: 0
     property real step: 1
     property real current: 0
-    // > 0 adds < > buttons that move by this much (PTZ rows).
-    property real arrowStep: 0
+    // < > buttons move by one step.
+    property real arrowStep: step
     signal committed(int value)
     signal reset()
     function nudge(dir) {
