@@ -128,7 +128,7 @@ meeting:
 | Image    | Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`     |
 |          |            | Reset image to defaults                   | one `v4l2-ctl -c` with all defaults      |
 
-**Preview** on the Position and Image tabs toggles a live 16:9 view for checking
+The camera icon at the top right of the panel toggles a live 16:9 view for checking
 PTZ and image changes. It defaults off and remembers your choice, but streams
 only while the panel is open. Close the panel (or hide the preview) before
 joining a call: UVC streaming is exclusive. For Follow camera use the preview

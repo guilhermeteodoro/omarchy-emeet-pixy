@@ -561,7 +561,7 @@ Panel {
           width: parent.width
           title: "EMEET PIXY"
           meta: root.summary()
-          detail: root.status.device || ""
+          // Top-right holds the preview toggle; the device path is in its tooltip.
           foreground: root.fg
           fontFamily: root.fontFamily
           iconOpacity: root.online ? 1.0 : 0.5
@@ -572,6 +572,22 @@ Panel {
               color: root.fg
               font.family: root.fontFamily
               font.pixelSize: Style.font.display
+            }
+          }
+          Action {
+            anchors.top: parent.top
+            anchors.right: parent.right
+            bordered: false
+            horizontalPadding: 0
+            verticalPadding: 0
+            iconText: root.preview ? "\u{F05A1}" : "\u{F05A0}"
+            opacity: root.preview ? 1.0 : 0.6
+            tooltipText: (root.preview ? "Hide preview" : "Live preview") + (root.status.device ? " (" + root.status.device + ")" : "")
+            // Turning it on opens the lens in the meeting mode; Static returns
+            // to the last Static position (Privacy -> Static restore).
+            onClicked: {
+              if (!root.preview && root.camera === "privacy") root.run([root.meetingMode])
+              root.setSetting("preview", !root.preview)
             }
           }
         }
@@ -609,22 +625,7 @@ Panel {
           }
         }
 
-        Column {
-          width: parent.width
-          spacing: Style.space(8)
-          visible: root.tab === "position" || root.tab === "image"
-          Action {
-            iconText: "\u{F05A0}"
-            text: root.preview ? "Hide preview" : "Preview"
-            tooltipText: "Live preview uses the camera; close the panel before joining a call"
-            // Turning it on opens the lens in the meeting mode; Static returns
-            // to the last Static position (Privacy -> Static restore).
-            onClicked: {
-              if (!root.preview && root.camera === "privacy") root.run([root.meetingMode])
-              root.setSetting("preview", !root.preview)
-            }
-          }
-          Item {
+        Item {
             width: parent.width
             height: width * 9 / 16
             visible: root.preview
@@ -652,7 +653,6 @@ Panel {
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
-          }
         }
 
         Section {
