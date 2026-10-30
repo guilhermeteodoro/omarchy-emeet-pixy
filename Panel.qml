@@ -580,8 +580,8 @@ Panel {
               // Padding is the hit area; the glyph stays small.
               horizontalPadding: Style.space(10)
               verticalPadding: Style.space(8)
-              iconText: root.preview ? "\u{F05A1}" : "\u{F05A0}"
-              opacity: root.preview ? 1.0 : 0.6
+              iconText: "\u{F05A0}"
+              opacity: root.preview ? 1.0 : 0.45
               tooltipText: (root.preview ? "Hide preview" : "Live preview") + (root.status.device ? " (" + root.status.device + ")" : "")
               // Turning it on opens the lens in the meeting mode; Static returns
               // to the last Static position (Privacy -> Static restore).
