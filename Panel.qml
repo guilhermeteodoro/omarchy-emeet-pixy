@@ -614,7 +614,12 @@ Panel {
             iconText: "\u{F05A0}"
             text: root.preview ? "Hide preview" : "Preview"
             tooltipText: "Live preview uses the camera; close the panel before joining a call"
-            onClicked: root.setSetting("preview", !root.preview)
+            // Turning it on opens the lens in the meeting mode; Static returns
+            // to the last Static position (Privacy -> Static restore).
+            onClicked: {
+              if (!root.preview && root.camera === "privacy") root.run([root.meetingMode])
+              root.setSetting("preview", !root.preview)
+            }
           }
           Item {
             width: parent.width

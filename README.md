@@ -132,9 +132,10 @@ meeting:
 PTZ and image changes. It defaults off and remembers your choice, but streams
 only while the panel is open. Close the panel (or hide the preview) before
 joining a call: UVC streaming is exclusive. The preview does not count as a
-meeting for Follow camera use; microphone capture still does. Privacy shows a
-closed-lens hint without changing modes, and an unavailable or busy camera
-shows an error instead of blank video.
+meeting for Follow camera use; microphone capture still does. Turning the
+preview on in Privacy opens the lens in the Meeting starts in mode (Track, or
+Static at the last Static position). An unavailable or busy camera shows an
+error instead of blank video.
 
 ### Static position
 
