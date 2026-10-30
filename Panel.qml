@@ -91,7 +91,8 @@ Panel {
       onStreamFinished: if (root.previewWanted) root.previewError = /busy/i.test(text) ? "Camera in use by another app" : (String(text).trim().split("\n").pop() || "Preview stopped")
     }
   }
-  Timer { interval: 66; repeat: true; running: previewProc.running; onTriggered: root.previewTick++ }
+  // The camera delivers 30 fps; reload at that rate, decoding off the UI thread.
+  Timer { interval: 33; repeat: true; running: previewProc.running; onTriggered: root.previewTick++ }
 
   property var watch: Watch.initial()
   property bool connectPending: false
@@ -584,6 +585,7 @@ Panel {
               anchors.fill: parent
               fillMode: Image.PreserveAspectFit
               cache: false
+              asynchronous: true
               retainWhileLoading: true
               source: previewProc.running ? "file://" + root.previewFrame + "?" + root.previewTick : ""
               visible: previewMessage.text === ""

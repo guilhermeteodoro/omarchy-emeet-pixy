@@ -28,6 +28,11 @@ function parse(text) {
     if (item && last && last.type === "menu")
       last.options.push({ value: item[1], label: item[2].trim().replace(/ Mode$/, "") })
   })
+  // The PIXY accepts gain under auto exposure but ignores it (measured: same
+  // brightness at gain 0 and 100), and the driver doesn't flag it inactive.
+  var ae = controls.filter(function(c) { return c.name === "auto_exposure" })[0]
+  if (ae && ae.value !== 1)
+    controls.forEach(function(c) { if (c.name === "gain") c.inactive = true })
   return controls
 }
 

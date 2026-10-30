@@ -43,6 +43,12 @@ assert.equal(byName.power_line_frequency.value, 2)
 // Reset skips inactive controls (the driver rejects writes to them).
 assert.equal(resetArg(controls), "contrast=128")
 
+// Gain is ignored under auto exposure: dimmed then, live in Manual (1).
+const gainLine = "                           gain 0x00980913 (int)    : min=0 max=100 step=1 default=0 value=19 flags=has-min-max\n"
+const ae = v => `                  auto_exposure 0x009a0901 (menu)   : min=0 max=3 default=3 value=${v} (Mode)\n`
+assert.equal(parse(gainLine + ae(3)).find(c => c.name === "gain").inactive, true)
+assert.equal(parse(gainLine + ae(1)).find(c => c.name === "gain").inactive, false)
+
 
 // Presets skip inactive controls and apply auto-mode switches before values.
 const image = snapshot(controls)
