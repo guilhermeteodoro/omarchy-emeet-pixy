@@ -18,7 +18,6 @@ Panel {
 
   readonly property string command: String(setting("command", "emeet-pixy"))
   readonly property int refreshIntervalSec: Math.max(1, Number(setting("refreshIntervalSec", 5)))
-  readonly property string webUrl: String(setting("webUrl", "http://127.0.0.1:8090"))
   readonly property bool followUsage: setting("followUsage", true) === true
   readonly property bool preview: setting("preview", false) === true
   // Close the lens at login and when the camera is plugged in (it powers up
@@ -28,12 +27,11 @@ Panel {
   // `idle` (Static), which returns to the last Static position.
   readonly property string meetingMode: setting("meetingMode", "track") === "idle" ? "idle" : "track"
   // Bar button: left always opens the panel; middle and right are configurable.
-  readonly property string middleClick: String(setting("middleClick", "web-ui"))
+  readonly property string middleClick: String(setting("middleClick", "static-track"))
   readonly property string rightClick: String(setting("rightClick", "toggle-privacy"))
   readonly property var clickActions: [
     { value: "static-track", label: "Switch Static \u2194 Track" },
     { value: "toggle-privacy", label: "Privacy \u2194 previous mode" },
-    { value: "web-ui", label: "Open web UI" },
     { value: "none", label: "Nothing" }
   ]
   // Last non-privacy mode, for "Privacy <-> previous mode".
@@ -47,7 +45,6 @@ Panel {
   function runClick(action) {
     if (action === "static-track") run([camera === "tracking" ? "idle" : "track"])
     else if (action === "toggle-privacy") run([camera === "privacy" ? (lastMode === "tracking" ? "track" : "idle") : "privacy"])
-    else if (action === "web-ui") Quickshell.execDetached(["omarchy-launch-browser", webUrl])
   }
   // Current preset: the last one picked. Panel changes save into it.
   readonly property string currentPreset: String(setting("preset", ""))

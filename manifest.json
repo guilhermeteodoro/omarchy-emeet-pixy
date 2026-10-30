@@ -27,14 +27,13 @@
     "defaults": {
       "command": "emeet-pixy",
       "refreshIntervalSec": 5,
-      "webUrl": "http://127.0.0.1:8090",
       "followUsage": true,
       "preview": false,
       "meetingMode": "track",
       "preset": "",
       "startPrivacy": true,
       "privacyDelaySec": 10,
-      "middleClick": "web-ui",
+      "middleClick": "static-track",
       "rightClick": "toggle-privacy"
     },
     "schema": [
@@ -54,13 +53,6 @@
         "step": 1,
         "defaultValue": 5,
         "description": "How often the bar polls the daemon while the panel is closed. The open panel polls every 2 seconds."
-      },
-      {
-        "key": "webUrl",
-        "type": "string",
-        "label": "Web UI URL",
-        "description": "Address of the daemon web UI (EMEET_PIXYD_WEB_ADDR).",
-        "defaultValue": "http://127.0.0.1:8090"
       },
       {
         "key": "preview",
@@ -118,11 +110,10 @@
         "options": [
           "static-track",
           "toggle-privacy",
-          "web-ui",
           "none"
         ],
-        "defaultValue": "web-ui",
-        "description": "static-track: switch Static/Track; toggle-privacy: Privacy and back to the previous mode; web-ui: open the daemon web UI; none."
+        "defaultValue": "static-track",
+        "description": "static-track: switch Static/Track; toggle-privacy: Privacy and back to the previous mode; none."
       },
       {
         "key": "rightClick",
@@ -131,7 +122,6 @@
         "options": [
           "static-track",
           "toggle-privacy",
-          "web-ui",
           "none"
         ],
         "defaultValue": "toggle-privacy",

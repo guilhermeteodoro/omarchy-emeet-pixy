@@ -73,7 +73,13 @@ system part lives in `install.sh`:
   talk to the camera's HID controls (`TAG+="uaccess"`); emeet-pixyd, live
   position and the privacy timer need it. It replaces a hand-written,
   world-writable `/etc/udev/rules.d/99-emeet-pixyd.rules` if present;
-- enables `emeet-pixyd.service` for your user.
+- enables `emeet-pixyd.service` for your user with a drop-in
+  (`~/.config/systemd/user/emeet-pixyd.service.d/70-emeet-pixy.conf`,
+  `PrivateNetwork=yes`) that puts the daemon in its own network namespace.
+  emeet-pixyd always serves an unauthenticated web UI on `127.0.0.1:8090`, so
+  without it any local account could control the camera or read its frames.
+  The plugin talks to the daemon over its owner-only Unix socket, which the
+  namespace does not affect; the web UI is unreachable.
 
 If that step was skipped, the panel shows "Setup incomplete" with the command
 to copy.
@@ -86,7 +92,8 @@ Update with `omarchy plugin update guilhermeteodoro.emeet-pixy`.
 ~/.config/omarchy/plugins/guilhermeteodoro.emeet-pixy/uninstall.sh   # asks for sudo if install.sh ran
 ```
 
-It removes the udev rule that `install.sh` installed, then runs `omarchy plugin
+It removes the udev rule and the service drop-in that `install.sh` installed
+(restarting emeet-pixyd, whose web UI is reachable again), then runs `omarchy plugin
 remove`. Your preset extras (`~/.config/omarchy/emeet-pixy-presets.json`) and
 emeet-pixyd, with its own presets and state, are kept; delete or uninstall them
 separately if you no longer need them.
@@ -100,10 +107,9 @@ the panel (Privacy settings → Bar button) or as `middleClick` / `rightClick`:
 |------------------|---------------------------------------------------------|
 | `static-track`   | Switch Static ↔ Track                                   |
 | `toggle-privacy` | Privacy ↔ the mode before it (Static or Track)          |
-| `web-ui`         | Open the daemon web UI                                  |
 | `none`           | Nothing                                                 |
 
-Defaults: middle `web-ui`, right `toggle-privacy`. The tooltip lists the current
+Defaults: middle `static-track`, right `toggle-privacy`. The tooltip lists the current
 choices.
 
 The icon shows the webcam glyph, crossed out in privacy mode, green in Static
@@ -174,7 +180,7 @@ mode are left alone, so loading a preset never opens the privacy shutter.
   gestures, pan/tilt/zoom) is saved into the current preset ~2.5s
   later, after the values are read back from the camera. Position is saved only
   when the panel moved the motors, since tracking moves them on its own.
-  Changes made outside the panel (CLI, web UI) are not saved.
+  Changes made outside the panel (CLI) are not saved.
 - **New** saves the current setup under a new name and makes it current;
   the trash button deletes the current preset.
 - Storage: `preset save/load/delete` in emeet-pixyd for position, the rest in
@@ -183,7 +189,7 @@ mode are left alone, so loading a preset never opens the privacy shutter.
   writes: auto-mode switches first (auto exposure, autofocus, auto white
   balance), then values, because the driver rejects e.g. exposure time while
   auto exposure is on.
-- Presets created elsewhere (web UI, CLI) start with position only and gain the
+- Presets created elsewhere (CLI) start with position only and gain the
   rest on their first auto-save.
 
 The Image section works like [cameractrls](https://github.com/soyersoyer/cameractrls):
@@ -213,13 +219,12 @@ Edit the entry in `~/.config/omarchy/shell.json` or use the bar settings UI:
 |----------------------|-------------------------|-------------------------------------------|
 | `command`            | `emeet-pixy`            | Client binary name or absolute path       |
 | `refreshIntervalSec` | `5`                     | Poll interval while the panel is closed   |
-| `webUrl`             | `http://127.0.0.1:8090` | Daemon web UI (`EMEET_PIXYD_WEB_ADDR`)    |
 | `preview`            | `false`                 | Live preview while the panel is open      |
 | `followUsage`        | `true`                  | Follow camera use (Privacy settings tab)  |
 | `meetingMode`        | `track`                 | Meeting opens the lens in `track`/`idle`  |
 | `startPrivacy`       | `true`                  | Close the lens at login and on plug-in    |
 | `privacyDelaySec`    | `10`                    | Seconds to Privacy mode after a meeting   |
-| `middleClick`        | `web-ui`                | Bar button middle-click action            |
+| `middleClick`        | `static-track`          | Bar button middle-click action            |
 | `rightClick`         | `toggle-privacy`        | Bar button right-click action             |
 | `preset`             | `""`                    | Current preset (preset bar)               |
 

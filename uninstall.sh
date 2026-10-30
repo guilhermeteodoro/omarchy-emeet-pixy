@@ -10,6 +10,15 @@ if [[ -e $rule ]]; then
   echo "removed $rule"
 fi
 
+dropin=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/emeet-pixyd.service.d/70-emeet-pixy.conf
+if [[ -e $dropin ]]; then
+  rm -f "$dropin"
+  rmdir --ignore-fail-on-non-empty "$(dirname "$dropin")"
+  systemctl --user daemon-reload
+  systemctl --user try-restart emeet-pixyd.service
+  echo "removed $dropin (emeet-pixyd web UI reachable again on 127.0.0.1:8090)"
+fi
+
 # Last: this deletes the directory this script lives in.
 omarchy plugin remove guilhermeteodoro.emeet-pixy --yes
 echo "kept ~/.config/omarchy/emeet-pixy-presets.json (delete it if you no longer need it)"
