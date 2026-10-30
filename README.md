@@ -120,11 +120,9 @@ meeting:
 | Tab      | Section    | Controls                                  | Command                                  |
 |----------|------------|-------------------------------------------|------------------------------------------|
 | Position | Camera     | Track / Static / Privacy                  | `track`, `idle`, `privacy`               |
-|          |            | Face / Half body / Full body              | `tracking <variant>`                     |
 |          | Audio      | Noise cancel / Live / Original            | `audio nc\|live\|org`                    |
 |          | Automation | Gesture control                           | `toggle-gesture`                         |
 |          | PTZ        | Pan (±150), tilt (±90), zoom (100–150), Static only | `pan`, `tilt`, `zoom` (sent on release) |
-|          |            | Center, Sync, Web UI                      | `center`, `sync`                         |
 | Image    | Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`     |
 |          |            | Reset image to defaults                   | one `v4l2-ctl -c` with all defaults      |
 
@@ -139,7 +137,7 @@ ending. An unavailable or busy camera shows an error instead of blank video.
 
 ### Static position
 
-Pan, tilt and Center are enabled only in Static: tracking and privacy drive
+Pan and tilt are enabled only in Static: tracking and privacy drive
 those motors themselves. Zoom also works while tracking. emeet-pixyd and V4L2 only know the last position
 that was *set*, and UVC pan/tilt is a single control, so after tracking a pan
 change would send the stale tilt along with it.
@@ -173,7 +171,7 @@ mode are left alone, so loading a preset never opens the privacy shutter.
   `preset` setting, so it survives restarts. Picking another loads it and makes
   it current.
 - **Auto-save**: every change made in the panel (image controls, reset, audio,
-  gestures, pan/tilt/zoom, Center) is saved into the current preset ~2.5s
+  gestures, pan/tilt/zoom) is saved into the current preset ~2.5s
   later, after the values are read back from the camera. Position is saved only
   when the panel moved the motors, since tracking moves them on its own.
   Changes made outside the panel (CLI, web UI) are not saved.
@@ -204,9 +202,8 @@ Editing the plugin: keep the checkout anywhere and symlink it to
 "reloading" on save but keeps the cached `Panel.qml`; run
 `omarchy restart shell` to load changes.
 
-The daemon does not report the tracking variant, so those buttons never show
-as selected. Every action triggers a status refresh. The bar polls `status`
-every `refreshIntervalSec` seconds, and every 2 seconds while the panel is open.
+Every action triggers a status refresh. The bar polls `status` every
+`refreshIntervalSec` seconds, and every 2 seconds while the panel is open.
 
 ## Settings
 

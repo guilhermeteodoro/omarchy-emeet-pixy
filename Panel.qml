@@ -670,15 +670,6 @@ Panel {
             // The CLI verb for tracking mode is `track`.
             onChanged: function(v) { root.run([v === "tracking" ? "track" : v]) }
           }
-          Choice {
-            value: ""
-            options: [
-              { value: "face", label: "Face" },
-              { value: "halfbody", label: "Half body" },
-              { value: "fullbody", label: "Full body" }
-            ]
-            onChanged: function(v) { root.run(["tracking", v]) }
-          }
         }
 
         Section {
@@ -716,7 +707,7 @@ Panel {
             width: parent.width
             wrapMode: Text.WordWrap
             textFormat: Text.PlainText
-            text: "Pan, tilt and Center work in Static; while tracking they show where the motors are. Zoom works in Static and Track."
+            text: "Pan and tilt work in Static; while tracking they show where the motors are. Zoom works in Static and Track."
             color: root.fg
             opacity: 0.6
             font.family: root.fontFamily
@@ -733,12 +724,6 @@ Panel {
           }
           // Zoom is not moved by tracking, so it stays usable there.
           SliderRow { text: "\u{F06ED} zoom"; labelWidth: Style.space(70); enabled: root.camera === "idle" || root.camera === "tracking"; opacity: enabled ? 1.0 : 0.4; minimum: 100; maximum: 150; current: Number(root.status.zoom || 0); onCommitted: function(v) { root.run(["zoom", String(v)]); root.noteChange(true) } }
-          Row {
-            spacing: Style.space(6)
-            Action { iconText: "\u{F01A4}"; text: "Center"; enabled: root.camera === "idle"; opacity: enabled ? 1.0 : 0.4; onClicked: { root.run(["center"]); root.noteChange(true) } }
-            Action { iconText: "\u{F0450}"; text: "Sync"; onClicked: root.run(["sync"]) }
-            Action { iconText: "\u{F059F}"; text: "Web UI"; onClicked: { Quickshell.execDetached(["omarchy-launch-browser", root.webUrl]); root.close() } }
-          }
           Text {
             width: parent.width
             wrapMode: Text.WordWrap
