@@ -778,12 +778,13 @@ Panel {
             font.pixelSize: Style.font.bodySmall
           }
           Repeater {
-            model: root.controls
+            model: Controls.orderedRows(root.controls)
             Column {
               id: ctl
               required property var modelData
-              readonly property var c: modelData
-              width: parent ? parent.width : 0
+              readonly property var c: modelData.control
+              x: modelData.dependent ? Style.space(16) : 0
+              width: parent ? parent.width - x : 0
               spacing: Style.space(4)
               // Inactive = governed by an automatic mode (e.g. exposure time
               // while auto exposure is on); the driver rejects writes.

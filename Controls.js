@@ -3,6 +3,30 @@
 // PTZ has its own controls and live motor readback in the Position tab.
 var PTZ_CONTROLS = ["pan_absolute", "tilt_absolute", "zoom_absolute", "zoom_continuous"]
 
+var AUTO_GROUPS = [
+  ["auto_exposure", "exposure_time_absolute", "gain"],
+  ["white_balance_automatic", "white_balance_temperature"],
+  ["focus_automatic_continuous", "focus_absolute"]
+]
+
+// Presentation only: preserve driver order outside the available auto groups.
+function orderedRows(controls) {
+  var byName = {}
+  controls.forEach(function(c) { byName[c.name] = c })
+  var grouped = []
+  var names = []
+  AUTO_GROUPS.forEach(function(group) {
+    if (!byName[group[0]]) return
+    group.forEach(function(name, index) {
+      if (!byName[name]) return
+      names.push(name)
+      grouped.push({ control: byName[name], dependent: index > 0 })
+    })
+  })
+  return controls.filter(function(c) { return names.indexOf(c.name) === -1 })
+    .map(function(c) { return { control: c, dependent: false } }).concat(grouped)
+}
+
 function parse(text) {
   var controls = []
   var last = null
@@ -72,4 +96,4 @@ function applyArgs(image, controls) {
 }
 
 if (typeof module !== "undefined")
-  module.exports = { parse: parse, label: label, resetArg: resetArg, snapshot: snapshot, applyArgs: applyArgs }
+  module.exports = { parse: parse, label: label, resetArg: resetArg, snapshot: snapshot, applyArgs: applyArgs, orderedRows: orderedRows }

@@ -179,6 +179,10 @@ Loading does not change camera mode.
 - Presets created elsewhere (CLI) start with position only and gain the
   rest on their first auto-save.
 
+The Image tab places standalone controls first, then groups exposure time and
+gain under auto exposure, temperature under auto white balance, and focus under
+continuous autofocus. Dependent sliders are indented beneath their switch.
+
 The Image section works like [cameractrls](https://github.com/soyersoyer/cameractrls):
 it lists the controls the driver reports (`v4l2-ctl --list-ctrls-menus`)
 and shows them as sliders, switches or choices. On the PIXY these are brightness,

@@ -1,6 +1,6 @@
 // node Controls.test.js — fixture is real EMEET PIXY output.
 const assert = require("node:assert/strict")
-const { parse, resetArg, snapshot, applyArgs } = require("./Controls.js")
+const { parse, resetArg, snapshot, applyArgs, orderedRows } = require("./Controls.js")
 
 const fixture = `
 User Controls
@@ -48,6 +48,26 @@ const gainLine = "                           gain 0x00980913 (int)    : min=0 ma
 const ae = v => `                  auto_exposure 0x009a0901 (menu)   : min=0 max=3 default=3 value=${v} (Mode)\n`
 assert.equal(parse(gainLine + ae(3)).find(c => c.name === "gain").inactive, true)
 assert.equal(parse(gainLine + ae(1)).find(c => c.name === "gain").inactive, false)
+
+// Standalone driver order, then each available switch with its dependents.
+{
+  const input = controls.concat([
+    { name: "gain" }, { name: "focus_absolute" },
+    { name: "focus_automatic_continuous" }, { name: "unknown_control" },
+  ])
+  assert.deepEqual(orderedRows(input).map(r => [r.control.name, r.dependent]), [
+    ["brightness", false], ["contrast", false], ["power_line_frequency", false],
+    ["unknown_control", false],
+    ["auto_exposure", false], ["exposure_time_absolute", true], ["gain", true],
+    ["white_balance_automatic", false], ["white_balance_temperature", true],
+    ["focus_automatic_continuous", false], ["focus_absolute", true],
+  ])
+  assert.deepEqual(orderedRows([{ name: "gain" }, byName.auto_exposure])
+    .map(r => r.control.name), ["auto_exposure", "gain"])
+  assert.deepEqual(orderedRows([{ name: "focus_absolute" }]),
+    [{ control: { name: "focus_absolute" }, dependent: false }])
+  assert.deepEqual(orderedRows([]), [])
+}
 
 
 // Presets skip inactive controls and apply auto-mode switches before values.
