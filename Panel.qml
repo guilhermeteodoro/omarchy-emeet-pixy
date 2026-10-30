@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtMultimedia
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Pipewire
@@ -20,6 +21,7 @@ Panel {
   readonly property int refreshIntervalSec: Math.max(1, Number(setting("refreshIntervalSec", 5)))
   readonly property string webUrl: String(setting("webUrl", "http://127.0.0.1:8090"))
   readonly property bool followUsage: setting("followUsage", true) === true
+  readonly property bool preview: setting("preview", false) === true
   // Close the lens at login and when the camera is plugged in (it powers up
   // at its firmware home position with the lens open).
   readonly property bool startPrivacy: setting("startPrivacy", true) === true
@@ -74,6 +76,24 @@ Panel {
   readonly property bool online: status.camera !== undefined
   readonly property string camera: status.camera || ""
   readonly property bool inCall: status.in_call === "yes"
+
+  MediaDevices { id: mediaDevices }
+  readonly property int previewInput: {
+    var inputs = mediaDevices.videoInputs
+    for (var i = 0; i < inputs.length; i++)
+      if (device !== "" && (String(inputs[i].id) === device || inputs[i].description === device)) return i
+    for (var j = 0; j < inputs.length; j++)
+      if (/EMEET|PIXY/i.test(inputs[j].description)) return j
+    return -1
+  }
+  CaptureSession {
+    camera: Camera {
+      id: previewCamera
+      cameraDevice: mediaDevices.videoInputs[root.previewInput] || mediaDevices.defaultVideoInput
+      active: root.opened && root.preview && root.previewInput >= 0
+    }
+    videoOutput: previewVideo
+  }
 
   property var watch: Watch.initial()
   property bool connectPending: false
@@ -314,7 +334,8 @@ Panel {
 
   function pollUse(videoBusy) {
     var wasPrimed = watch.primed
-    var inUse = videoBusy || capturing
+    // UVC streaming is exclusive: our preview is not a meeting. Keep mic use.
+    var inUse = (videoBusy && !previewCamera.active && !useProc.previewWasActive) || capturing
     var r = Watch.step(watch, inUse, camera, startPrivacy, Watch.endPolls(privacyDelay))
     watch = r.next
     if (!wasPrimed && !inUse) applyCurrentImage()
@@ -382,6 +403,7 @@ Panel {
 
   Process {
     id: useProc
+    property bool previewWasActive: false
     command: [Qt.resolvedUrl("bin/streaming").toString().replace(/^file:\/\//, ""), root.device]
     onExited: function(exitCode) { root.pollUse(exitCode === 0) }
   }
@@ -390,7 +412,10 @@ Panel {
     interval: 2000
     running: root.followUsage && root.device !== ""
     repeat: true
-    onTriggered: if (!useProc.running) useProc.running = true
+    onTriggered: if (!useProc.running) {
+      useProc.previewWasActive = previewCamera.active
+      useProc.running = true
+    }
   }
 
   // Camera (re)connects: the daemon re-probes on its own; give it a moment,
@@ -578,6 +603,45 @@ Panel {
             text: "Copy setup command"
             tooltipText: root.setupCommand
             onClicked: Quickshell.execDetached(["wl-copy", root.setupCommand])
+          }
+        }
+
+        Column {
+          width: parent.width
+          spacing: Style.space(8)
+          visible: root.tab === "position" || root.tab === "image"
+          Action {
+            iconText: "\u{F05A0}"
+            text: root.preview ? "Hide preview" : "Preview"
+            tooltipText: "Live preview uses the camera; close the panel before joining a call"
+            onClicked: root.setSetting("preview", !root.preview)
+          }
+          Item {
+            width: parent.width
+            height: width * 9 / 16
+            visible: root.preview
+            VideoOutput {
+              id: previewVideo
+              anchors.fill: parent
+              fillMode: VideoOutput.PreserveAspectFit
+              visible: previewMessage.text === ""
+            }
+            Text {
+              id: previewMessage
+              anchors.centerIn: parent
+              width: parent.width
+              horizontalAlignment: Text.AlignHCenter
+              elide: Text.ElideRight
+              textFormat: Text.PlainText
+              text: root.previewInput < 0 ? "No EMEET PIXY camera found"
+                : previewCamera.error !== Camera.NoError ? previewCamera.errorString
+                : root.camera === "privacy" ? "Lens closed — choose Static or Track to preview"
+                : ""
+              color: root.fg
+              opacity: 0.8
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
           }
         }
 

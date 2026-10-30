@@ -128,6 +128,14 @@ meeting:
 | Image    | Image      | Every V4L2 control the camera exposes     | `v4l2-ctl -d <device> -c name=value`     |
 |          |            | Reset image to defaults                   | one `v4l2-ctl -c` with all defaults      |
 
+**Preview** on the Position and Image tabs toggles a live 16:9 view for checking
+PTZ and image changes. It defaults off and remembers your choice, but streams
+only while the panel is open. Close the panel (or hide the preview) before
+joining a call: UVC streaming is exclusive. The preview does not count as a
+meeting for Follow camera use; microphone capture still does. Privacy shows a
+closed-lens hint without changing modes, and an unavailable or busy camera
+shows an error instead of blank video.
+
 ### Static position
 
 Pan, tilt and Center are enabled only in Static: tracking and privacy drive
@@ -208,6 +216,7 @@ Edit the entry in `~/.config/omarchy/shell.json` or use the bar settings UI:
 | `command`            | `emeet-pixy`            | Client binary name or absolute path       |
 | `refreshIntervalSec` | `5`                     | Poll interval while the panel is closed   |
 | `webUrl`             | `http://127.0.0.1:8090` | Daemon web UI (`EMEET_PIXYD_WEB_ADDR`)    |
+| `preview`            | `false`                 | Live preview while the panel is open      |
 | `followUsage`        | `true`                  | Follow camera use (Privacy settings tab)  |
 | `meetingMode`        | `track`                 | Meeting opens the lens in `track`/`idle`  |
 | `startPrivacy`       | `true`                  | Close the lens at login and on plug-in    |

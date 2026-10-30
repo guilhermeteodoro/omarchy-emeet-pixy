@@ -29,6 +29,7 @@
       "refreshIntervalSec": 5,
       "webUrl": "http://127.0.0.1:8090",
       "followUsage": true,
+      "preview": false,
       "meetingMode": "track",
       "preset": "",
       "startPrivacy": true,
@@ -60,6 +61,13 @@
         "label": "Web UI URL",
         "description": "Address of the daemon web UI (EMEET_PIXYD_WEB_ADDR).",
         "defaultValue": "http://127.0.0.1:8090"
+      },
+      {
+        "key": "preview",
+        "type": "boolean",
+        "label": "Live preview",
+        "description": "Show the PIXY video in the Position and Image tabs while the panel is open. Close the panel to release the camera for other apps.",
+        "defaultValue": false
       },
       {
         "key": "followUsage",
