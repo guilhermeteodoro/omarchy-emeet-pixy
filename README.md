@@ -131,11 +131,11 @@ meeting:
 **Preview** on the Position and Image tabs toggles a live 16:9 view for checking
 PTZ and image changes. It defaults off and remembers your choice, but streams
 only while the panel is open. Close the panel (or hide the preview) before
-joining a call: UVC streaming is exclusive. The preview does not count as a
-meeting for Follow camera use; microphone capture still does. Turning the
-preview on in Privacy opens the lens in the Meeting starts in mode (Track, or
-Static at the last Static position). An unavailable or busy camera shows an
-error instead of blank video.
+joining a call: UVC streaming is exclusive. For Follow camera use the preview
+counts like a meeting: turning it on in Privacy opens the lens in the Meeting
+starts in mode (Track, or Static at the last Static position), and hiding it or
+closing the panel goes to Privacy after `privacyDelaySec`, like a meeting
+ending. An unavailable or busy camera shows an error instead of blank video.
 
 ### Static position
 

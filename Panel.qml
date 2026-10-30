@@ -334,8 +334,12 @@ Panel {
 
   function pollUse(videoBusy) {
     var wasPrimed = watch.primed
-    // UVC streaming is exclusive: our preview is not a meeting. Keep mic use.
-    var inUse = (videoBusy && !previewCamera.active && !useProc.previewWasActive) || capturing
+    // The preview counts as camera use, so hiding it (or closing the panel)
+    // ends it like a meeting: Privacy after privacyDelay. Its lens mode is
+    // set by the Preview button, so mark the lens open: no `track` action.
+    if (previewCamera.active && watch.primed && watch.state !== "tracking")
+      watch = Object.assign({}, watch, { state: "tracking" })
+    var inUse = videoBusy || capturing
     var r = Watch.step(watch, inUse, camera, startPrivacy, Watch.endPolls(privacyDelay))
     watch = r.next
     if (!wasPrimed && !inUse) applyCurrentImage()
@@ -403,7 +407,6 @@ Panel {
 
   Process {
     id: useProc
-    property bool previewWasActive: false
     command: [Qt.resolvedUrl("bin/streaming").toString().replace(/^file:\/\//, ""), root.device]
     onExited: function(exitCode) { root.pollUse(exitCode === 0) }
   }
@@ -412,10 +415,7 @@ Panel {
     interval: 2000
     running: root.followUsage && root.device !== ""
     repeat: true
-    onTriggered: if (!useProc.running) {
-      useProc.previewWasActive = previewCamera.active
-      useProc.running = true
-    }
+    onTriggered: if (!useProc.running) useProc.running = true
   }
 
   // Camera (re)connects: the daemon re-probes on its own; give it a moment,
