@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Controls
-import QtMultimedia
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Pipewire
@@ -77,23 +76,27 @@ Panel {
   readonly property string camera: status.camera || ""
   readonly property bool inCall: status.in_call === "yes"
 
-  MediaDevices { id: mediaDevices }
-  readonly property int previewInput: {
-    var inputs = mediaDevices.videoInputs
-    for (var i = 0; i < inputs.length; i++)
-      if (device !== "" && (String(inputs[i].id) === device || inputs[i].description === device)) return i
-    for (var j = 0; j < inputs.length; j++)
-      if (/EMEET|PIXY/i.test(inputs[j].description)) return j
-    return -1
-  }
-  CaptureSession {
-    camera: Camera {
-      id: previewCamera
-      cameraDevice: mediaDevices.videoInputs[root.previewInput] || mediaDevices.defaultVideoInput
-      active: root.opened && root.preview && root.previewInput >= 0
+  // Live preview: ffmpeg in its own process copies MJPEG frames to one file
+  // that an Image reloads. Not QtMultimedia: it keeps the device streaming
+  // inside the shell process until the shell exits, which blocks meeting apps
+  // and looks like a never-ending meeting to the follower. Killing ffmpeg
+  // releases the camera.
+  readonly property string previewFrame: Quickshell.env("XDG_RUNTIME_DIR") + "/emeet-pixy-preview.jpg"
+  readonly property bool previewWanted: opened && preview && device !== ""
+  property string previewError: ""
+  property int previewTick: 0
+  onPreviewWantedChanged: { if (previewWanted) previewError = ""; previewProc.running = previewWanted }
+
+  Process {
+    id: previewProc
+    command: ["sh", "-c", 'rm -f "$1"; exec ffmpeg -hide_banner -loglevel error -f v4l2 -input_format mjpeg -video_size 640x360 -framerate 15 -i "$0" -c:v copy -f image2 -update 1 -atomic_writing 1 -y "$1"',
+      root.device, root.previewFrame]
+    stderr: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: if (root.previewWanted) root.previewError = /busy/i.test(text) ? "Camera in use by another app" : (String(text).trim().split("\n").pop() || "Preview stopped")
     }
-    videoOutput: previewVideo
   }
+  Timer { interval: 66; repeat: true; running: previewProc.running; onTriggered: root.previewTick++ }
 
   property var watch: Watch.initial()
   property bool connectPending: false
@@ -337,7 +340,7 @@ Panel {
     // The preview counts as camera use, so hiding it (or closing the panel)
     // ends it like a meeting: Privacy after privacyDelay. Its lens mode is
     // set by the Preview button, so mark the lens open: no `track` action.
-    if (previewCamera.active && watch.primed && watch.state !== "tracking")
+    if (previewProc.running && watch.primed && watch.state !== "tracking")
       watch = Object.assign({}, watch, { state: "tracking" })
     var inUse = videoBusy || capturing
     var r = Watch.step(watch, inUse, camera, startPrivacy, Watch.endPolls(privacyDelay))
@@ -625,10 +628,12 @@ Panel {
             width: parent.width
             height: width * 9 / 16
             visible: root.preview
-            VideoOutput {
-              id: previewVideo
+            Image {
               anchors.fill: parent
-              fillMode: VideoOutput.PreserveAspectFit
+              fillMode: Image.PreserveAspectFit
+              cache: false
+              retainWhileLoading: true
+              source: previewProc.running ? "file://" + root.previewFrame + "?" + root.previewTick : ""
               visible: previewMessage.text === ""
             }
             Text {
@@ -638,8 +643,8 @@ Panel {
               horizontalAlignment: Text.AlignHCenter
               elide: Text.ElideRight
               textFormat: Text.PlainText
-              text: root.previewInput < 0 ? "No EMEET PIXY camera found"
-                : previewCamera.error !== Camera.NoError ? previewCamera.errorString
+              text: root.device === "" ? "No EMEET PIXY camera found"
+                : root.previewError !== "" ? root.previewError
                 : root.camera === "privacy" ? "Lens closed — choose Static or Track to preview"
                 : ""
               color: root.fg

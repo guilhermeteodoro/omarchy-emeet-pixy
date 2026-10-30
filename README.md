@@ -15,7 +15,7 @@ connects (replacing cameractrlsd and a privacy-on-connect udev hook).
   `~/.nix-profile/bin` and `~/.local/bin` are added to `PATH`, so a Nix profile
   install works without changes.
 - `v4l2-ctl` (v4l-utils), `/usr/bin/python3` (helpers in `bin/`), `udevadm`
-  (systemd)
+  (systemd), `ffmpeg` (live preview)
 
 ## Following camera use
 
