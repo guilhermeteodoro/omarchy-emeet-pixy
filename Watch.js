@@ -1,6 +1,5 @@
 // Camera-use follower (replaces the old emeet-watch service): open the lens
 // and track while an app uses the camera or microphone, privacy once idle.
-// emeet-pixyd's own auto mode is turned off so the two never fight.
 
 var START_POLLS = 2 // x 2s: lens opens ~4s after an app starts using the camera
 var POLL_SEC = 2
@@ -23,7 +22,7 @@ function reconnected(startPrivacy) {
 }
 
 // One poll. Returns { next, action } with action "", "track" or "privacy".
-// The first poll adopts the camera's synced state instead of commanding it: a
+// The first poll adopts the camera's hardware state instead of commanding it: a
 // shell restart mid-call with the lens open never switches the camera, a
 // privacy start with an app streaming still opens the lens, and an idle start
 // with the lens open gets privacy only with startPrivacy (login / boot).

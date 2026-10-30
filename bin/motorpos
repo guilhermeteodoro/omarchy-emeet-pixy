@@ -1,8 +1,8 @@
 #!/usr/bin/python3
 # Prints the live motor position of an EMEET PIXY as "<pan> <tilt>" degrees.
-# argv[1] = the camera's hidraw node (`emeet-pixy device`, second field).
+# argv[1] = the camera's hidraw node (`bin/pixy device`, second field).
 #
-# V4L2 and emeet-pixyd only know the last position that was *set*; tracking
+# V4L2 only knows the last position that was *set*; tracking
 # moves the motors on its own. The firmware reports the real position through
 # CMD_GET_MOTOR_POS, recovered from EMEET STUDIO 2.0.4 (macOS,
 # EMHidCmdHelper::hidCmdSendGetMotorPos / hidCmdParseGetMotorPos):
@@ -26,7 +26,7 @@ def current(fd, motor):
         if not ready:
             raise TimeoutError
         reply = os.read(fd, 64)
-        # Skip replies to other commands (the daemon shares the device).
+        # Skip replies to other commands (other plugin helpers share the device).
         if len(reply) >= 17 and reply[0] == 0x09 and reply[1] & 0x1F == 0x03 and reply[2:4] == GET_MOTOR_POS[2:4] and reply[8] == motor:
             return struct.unpack("<f", reply[13:17])[0]
 

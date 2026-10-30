@@ -1,7 +1,7 @@
 // Parses `v4l2-ctl --list-ctrls-menus` into image controls for the panel.
 
-// emeet-pixyd owns the motors; touching them here would desync its state.
-var DAEMON_OWNED = ["pan_absolute", "tilt_absolute", "zoom_absolute", "zoom_continuous"]
+// PTZ has its own controls and live motor readback in the Position tab.
+var PTZ_CONTROLS = ["pan_absolute", "tilt_absolute", "zoom_absolute", "zoom_continuous"]
 
 function parse(text) {
   var controls = []
@@ -12,7 +12,7 @@ function parse(text) {
       last = null
       var type = head[2]
       if (type !== "int" && type !== "bool" && type !== "menu") return
-      if (DAEMON_OWNED.indexOf(head[1]) !== -1) return
+      if (PTZ_CONTROLS.indexOf(head[1]) !== -1) return
       var c = { name: head[1], type: type, label: label(head[1]), options: [] }
       var re = /(\w+)=(-?\d+)/g
       var m

@@ -1,19 +1,13 @@
 # EMEET PIXY for Omarchy
 
 Omarchy Quattro bar widget for the [EMEET PIXY](https://www.emeet.com) webcam,
-meant as the only thing besides the daemon you need for it. It drives
-[emeet-pixyd](https://github.com/LarsArtmann/emeet-pixyd) through its client
-CLI, edits image controls through V4L2 (replacing cameractrls), follows camera
-use (replacing a watcher service) and restores a preset when the camera
-connects (replacing cameractrlsd and a privacy-on-connect udev hook).
+with direct camera control through the bundled `bin/pixy` helper. It edits
+image controls through V4L2, follows camera use and restores image presets
+when the camera connects. No daemon, HTTP server or user service is required.
 
 ## Requirements
 
 - Omarchy 4 (Quattro) shell
-- [emeet-pixyd](https://github.com/LarsArtmann/emeet-pixyd) installed; the
-  widget calls its client (`emeet-pixy` or `emeet-pixyd <command>`).
-  `~/.nix-profile/bin` and `~/.local/bin` are added to `PATH`, so a Nix profile
-  install works without changes.
 - `v4l2-ctl` (v4l-utils), `/usr/bin/python3` (helpers in `bin/`), `udevadm`
   (systemd), `ffmpeg` (live preview)
 
@@ -30,14 +24,13 @@ capture streams):
   the current preset's audio mode (`nc` without one);
 - idle for `privacyDelaySec` seconds (default 10): `privacy`.
 
-emeet-pixyd's own auto mode is switched off so the two never fight. At startup
-the widget runs `sync` and the first poll adopts the camera's real state:
+Every status poll reads the hardware directly; the first poll adopts its state:
 restarting the shell mid-call with the lens open never switches it, and a
 camera left in privacy while an app streams gets opened.
 
 **Start in Privacy mode** (`startPrivacy`, on by default): the camera powers up
 at its firmware home position with the lens open, so at login and whenever it
-is plugged in (`udevadm monitor`) the widget runs `sync`, restores the current
+is plugged in (`udevadm monitor`) the widget reads hardware, restores the current
 preset's image controls and closes the lens ~10s later unless an app is using
 it. Off: the lens is left as the camera came up until a call has come and gone.
 
@@ -70,16 +63,15 @@ Omarchy's plugin installer never runs plugin code or sudo, so the one-time
 system part lives in `install.sh`:
 
 - installs `udev/70-emeet-pixy.rules`, which lets the logged-in user (only)
-  talk to the camera's HID controls (`TAG+="uaccess"`); emeet-pixyd, live
-  position and the privacy timer need it. It replaces a hand-written,
-  world-writable `/etc/udev/rules.d/99-emeet-pixyd.rules` if present;
-- enables `emeet-pixyd.service` for your user with a drop-in
-  (`~/.config/systemd/user/emeet-pixyd.service.d/70-emeet-pixy.conf`,
-  `PrivateNetwork=yes`) that puts the daemon in its own network namespace.
-  emeet-pixyd always serves an unauthenticated web UI on `127.0.0.1:8090`, so
-  without it any local account could control the camera or read its frames.
-  The plugin talks to the daemon over its owner-only Unix socket, which the
-  namespace does not affect; the web UI is unreachable.
+  talk to the camera's HID controls (`TAG+="uaccess"`), including native
+  control, live position and the privacy timer. It replaces a hand-written,
+  world-writable `/etc/udev/rules.d/99-emeet-pixyd.rules` if present.
+
+When upgrading from 0.4, stop and disable the old daemon yourself:
+`systemctl --user disable --now emeet-pixyd.service`. Do this only outside a
+call, when switching to this version. The installer neither starts nor changes
+services. Remove an old `70-emeet-pixy.conf` service drop-in only after retiring
+the daemon; uninstalling this plugin does not re-expose its web server.
 
 If that step was skipped, the panel shows "Setup incomplete" with the command
 to copy.
@@ -92,11 +84,9 @@ Update with `omarchy plugin update guilhermeteodoro.emeet-pixy`.
 ~/.config/omarchy/plugins/guilhermeteodoro.emeet-pixy/uninstall.sh   # asks for sudo if install.sh ran
 ```
 
-It removes the udev rule and the service drop-in that `install.sh` installed
-(restarting emeet-pixyd, whose web UI is reachable again), then runs `omarchy plugin
-remove`. Your preset extras (`~/.config/omarchy/emeet-pixy-presets.json`) and
-emeet-pixyd, with its own presets and state, are kept; delete or uninstall them
-separately if you no longer need them.
+It removes the udev rule and runs `omarchy plugin remove`. Your presets in
+`~/.config/omarchy/emeet-pixy-presets.json` are kept. Any separately installed
+emeet-pixyd and its state are untouched.
 
 ## Bar button
 
@@ -113,8 +103,8 @@ Defaults: middle `static-track`, right `toggle-privacy`. The tooltip lists the c
 choices.
 
 The icon shows the webcam glyph, crossed out in privacy mode, green in Static
-and blue while tracking (like the camera's LED), and dimmed when the daemon is
-unreachable. The tooltip shows the mode, audio mode and call state.
+and blue while tracking (like the camera's LED), and dimmed when the camera is
+unavailable. The tooltip shows camera and audio modes.
 
 ## Panel
 Three tabs (Position, Image, Privacy settings), switched by click or
@@ -143,35 +133,28 @@ ending. An unavailable or busy camera shows an error instead of blank video.
 
 ### Static position
 
-Pan and tilt are enabled only in Static: tracking and privacy drive
-those motors themselves. Zoom also works while tracking. emeet-pixyd and V4L2 only know the last position
-that was *set*, and UVC pan/tilt is a single control, so after tracking a pan
-change would send the stale tilt along with it.
+Pan and tilt are enabled only in Static: tracking and privacy drive those
+motors themselves. Zoom also works while tracking.
 
-`bin/motorpos` reads the real position from the firmware over hidraw
-(`CMD_GET_MOTOR_POS`, recovered from EMEET STUDIO 2.0.4; see the comment in the
-script for the byte layout):
+`bin/pixy status` and `bin/motorpos` read real motor positions via
+`09 63 01 01` with HID v2 framing
+`[index u8][total length u16 LE][chunk length u8][payload]`.
+The reply contains motor, target and current position; motors 1 and 2 are pan
+and tilt. No motor-speed command is sent.
 
-- **While tracking**, the pan/tilt sliders follow the motors (once a second
-  while the panel is open).
-- **Tracking → Static** hands the real position to the daemon (`pan`/`tilt`,
-  rounded to whole degrees), so sliders, daemon and motors agree before the
-  next move.
-- **Privacy → Static** (panel, right click or CLI) returns to the last Static
-  position (`staticPosition` setting), through `center` because the daemon
-  would skip a move to a position it already believes in.
-
-emeet-pixyd's own HID motor frames (`setMotorPos`, `speed`) put the payload
-right after the 4-byte head; the firmware expects the HID v2 frame
-`[index u8][total length u16 LE][chunk length u8][payload]`, and this app's
-command table is shifted by one from the one in upstream's `tools/emhid`
-(`…01 01` = GET_MOTOR_POS, `…01 02` = SET_MOTOR_SPEED, motors 1 = pan, 2 = tilt).
+Native moves use V4L2 extended controls. Pan and tilt are submitted together,
+using live HID coordinates for the untouched axis, because UVC shares their
+control and otherwise reuses stale tilt after tracking. While tracking, the
+sliders follow the motors once a second with the panel open.
+Privacy → Static in the panel restores `staticPosition` without a preliminary
+center move. A direct CLI `idle` does not read the panel's settings.
+Static moves hold the helper lock until the motors reach their target (up to
+15 seconds), preventing a status/preset read from saving an in-between position.
 
 ### Presets
 
-A preset is the daemon's PTZ preset extended with the rest of the setup: every
-active image control, the audio mode and gesture control. Camera mode and auto
-mode are left alone, so loading a preset never opens the privacy shutter.
+A preset contains PTZ plus image controls, audio and gesture settings.
+Loading does not change camera mode.
 
 - **Current preset**: the one last picked in the preset bar, stored as the
   `preset` setting, so it survives restarts. Picking another loads it and makes
@@ -183,8 +166,12 @@ mode are left alone, so loading a preset never opens the privacy shutter.
   Changes made outside the panel (CLI) are not saved.
 - **New** saves the current setup under a new name and makes it current;
   the trash button deletes the current preset.
-- Storage: `preset save/load/delete` in emeet-pixyd for position, the rest in
-  `~/.config/omarchy/emeet-pixy-presets.json`.
+- Storage: all fields live in `~/.config/omarchy/emeet-pixy-presets.json`.
+  `bin/pixy` is the sole writer, preserving extras while saving PTZ atomically.
+  No automatic migration is performed. Existing extras remain, but re-save
+  each old preset's position before loading it. Daemon state was found at
+  `/run/emeet-pixyd/state.json`, not `~/.local/state/emeet-pixyd/`; it is not
+  a durable migration source and is never modified by the helper.
 - Loading runs `preset load`, `audio`, `gesture-on|off`, then two `v4l2-ctl -c`
   writes: auto-mode switches first (auto exposure, autofocus, auto white
   balance), then values, because the driver rejects e.g. exposure time while
@@ -198,7 +185,7 @@ and shows them as sliders, switches or choices. On the PIXY these are brightness
 contrast, saturation, hue, gamma, gain, sharpness, backlight compensation,
 power-line frequency, white balance (auto/temperature), auto exposure
 (manual/aperture priority), exposure time and focus (auto/absolute). Pan, tilt
-and zoom are left out because emeet-pixyd owns the motors. A control that an
+and zoom have their own native controls in the Position tab. A control that an
 auto mode governs (exposure time under aperture priority, focus under
 continuous autofocus) is dimmed until you switch that auto mode off. Every slider has < > buttons that move it one step. Right click
 a slider to reset that control. The parser test runs with `node Controls.test.js`.
@@ -217,7 +204,6 @@ Edit the entry in `~/.config/omarchy/shell.json` or use the bar settings UI:
 
 | Key                  | Default                 | Meaning                                   |
 |----------------------|-------------------------|-------------------------------------------|
-| `command`            | `emeet-pixy`            | Client binary name or absolute path       |
 | `refreshIntervalSec` | `5`                     | Poll interval while the panel is closed   |
 | `preview`            | `false`                 | Live preview while the panel is open      |
 | `followUsage`        | `true`                  | Follow camera use (Privacy settings tab)  |
@@ -230,9 +216,32 @@ Edit the entry in `~/.config/omarchy/shell.json` or use the bar settings UI:
 
 ## Keybindings
 
-The widget needs no IPC: bind the CLI directly in `~/.config/hypr/bindings.lua`
-and the bar picks the change up on its next poll, for example
-`emeet-pixy toggle-privacy`.
+The widget needs no IPC: bind the bundled helper directly in
+`~/.config/hypr/bindings.lua`, for example
+`~/.config/omarchy/plugins/guilhermeteodoro.emeet-pixy/bin/pixy privacy`.
+The bar picks the change up on its next poll. Available commands:
+`status`, `device`, `track`, `idle`, `privacy`, `audio nc|live|org`,
+`toggle-gesture`, `gesture-on`, `gesture-off`, `pan N`, `tilt N`, `zoom N`,
+`ptz PAN TILT ZOOM` (one combined move), `center`, and
+`preset save|load|delete NAME` / `preset list`.
+
+Camera status is hardware state, not the last requested mode. Firmware 2.0.4
+reports open-lens standby (raw mode 3) without a stream; this is displayed as
+Static. Tracking readback becomes `tracking` with a running video stream.
+Pan/tilt status and saved positions use whole degrees; the live motor helper
+retains sub-degree precision.
+
+The audio and gesture setters use the EMEET STUDIO 2.0.4 frames: audio
+`09 05 00 03` with payload `1/2/3`, gesture `09 04 02 00` with payload
+`[2, enabled]`. Hardware tests found that the daemon's legacy setters did not
+change these settings. Gesture GET reads payload byte 9, not the padded last
+byte, so native status can correctly differ from the daemon's cached status.
+
+## Credits
+
+Protocol knowledge from [emeet-pixyd](https://github.com/LarsArtmann/emeet-pixyd)
+(MIT) and EMEET STUDIO reverse engineering. The helper uses Python's standard
+library and Linux HID/V4L2 interfaces, not the daemon.
 
 ## License
 

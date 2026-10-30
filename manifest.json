@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "guilhermeteodoro.emeet-pixy",
   "name": "EMEET PIXY",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": "Guilherme Teodoro",
   "license": "MIT",
-  "description": "Control the EMEET PIXY webcam through emeet-pixyd from an Omarchy Quattro bar widget.",
+  "description": "Control the EMEET PIXY webcam directly from an Omarchy Quattro bar widget; no daemon or web server.",
   "kinds": [
     "bar-widget"
   ],
@@ -25,7 +25,6 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "command": "emeet-pixy",
       "refreshIntervalSec": 5,
       "followUsage": true,
       "preview": false,
@@ -38,13 +37,6 @@
     },
     "schema": [
       {
-        "key": "command",
-        "type": "string",
-        "label": "emeet-pixyd client",
-        "description": "Name on PATH or absolute path of emeet-pixy / emeet-pixyd. ~/.nix-profile/bin and ~/.local/bin are searched too.",
-        "defaultValue": "emeet-pixy"
-      },
-      {
         "key": "refreshIntervalSec",
         "type": "integer",
         "label": "Refresh interval (seconds)",
@@ -52,7 +44,7 @@
         "max": 300,
         "step": 1,
         "defaultValue": 5,
-        "description": "How often the bar polls the daemon while the panel is closed. The open panel polls every 2 seconds."
+        "description": "How often the bar reads camera hardware while the panel is closed. The open panel polls every 2 seconds."
       },
       {
         "key": "preview",
@@ -65,7 +57,7 @@
         "key": "followUsage",
         "type": "boolean",
         "label": "Follow camera use",
-        "description": "Open the lens (Meeting starts in) and switch to the preset's audio mode ~4s after an app uses the camera or microphone; privacy ~10s after it stops. Turns emeet-pixyd's own auto mode off.",
+        "description": "Open the lens (Meeting starts in) and switch to the preset's audio mode ~4s after an app uses the camera or microphone; privacy after the configured idle delay.",
         "defaultValue": true
       },
       {

@@ -9,14 +9,14 @@ import "Controls.js" as Controls
 import "Watch.js" as Watch
 
 // Bar button + popup for the EMEET PIXY, and the one place that manages it:
-// camera actions are emeet-pixyd client calls, image controls go straight to
+// camera actions use bin/pixy directly, image controls go straight to
 // V4L2 with v4l2-ctl (like cameractrls), and the widget follows camera use
 // (Watch.js) and restores a preset whenever the camera connects.
 Panel {
   id: root
   moduleName: "guilhermeteodoro.emeet-pixy"
 
-  readonly property string command: String(setting("command", "emeet-pixy"))
+  readonly property string command: Qt.resolvedUrl("bin/pixy").toString().replace(/^file:\/\//, "")
   readonly property int refreshIntervalSec: Math.max(1, Number(setting("refreshIntervalSec", 5)))
   readonly property bool followUsage: setting("followUsage", true) === true
   readonly property bool preview: setting("preview", false) === true
@@ -55,11 +55,10 @@ Panel {
   readonly property color trackColor: "#3b82f6"
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
 
-  // Parsed `status`: camera, audio, gesture, pan, tilt, zoom, in_call, auto, device.
+  // Parsed hardware status: camera, audio, gesture, pan, tilt, zoom, device.
   property var status: ({})
   property var presets: []
-  // Everything a preset holds beyond the daemon's pan/tilt/zoom, keyed by
-  // preset name: { image: {control: value}, audio, gesture }.
+  // Presets share one file with bin/pixy, which is its only writer.
   property var presetExtras: ({})
   readonly property string presetsPath: Quickshell.env("HOME") + "/.config/omarchy/emeet-pixy-presets.json"
   // Panel tab; kept while the shell runs so reopening lands where you left.
@@ -71,7 +70,6 @@ Panel {
   readonly property string device: status.device || ""
   readonly property bool online: status.camera !== undefined
   readonly property string camera: status.camera || ""
-  readonly property bool inCall: status.in_call === "yes"
 
   // Live preview: ffmpeg in its own process copies MJPEG frames to one file
   // that an Image reloads. Not QtMultimedia: it keeps the device streaming
@@ -111,31 +109,23 @@ Panel {
   }
 
   function summary() {
-    if (!online) return "emeet-pixyd unreachable"
-    return camera + " · audio " + status.audio + (inCall ? " · in call" : "")
+    if (!online) return "Camera unavailable"
+    return camera + " · audio " + status.audio
   }
 
-  // Runs `<command> args...`. The shell's PATH usually lacks the Nix profile
-  // where emeet-pixyd is installed, so it is appended here.
+  // Use the bundled helper, without a shell or configurable executable.
   function argv(args) {
-    return ["sh", "-c", 'PATH="$PATH:$HOME/.nix-profile/bin:$HOME/.local/bin"; exec "$0" "$@"', command].concat(args)
+    return [command].concat(args)
   }
 
-  function savePresetExtras(next) {
-    presetExtras = next
-    presetsFile.setText(JSON.stringify({ version: 1, presets: next }, null, 2) + "\n")
-  }
-
-  // Writes the live setup into the current preset. PTZ goes to the daemon's
-  // preset only when the panel moved the motors: during tracking the position
-  // drifts on its own and is not a setting.
+  // Save position only after user moves: tracking is not a saved setting.
   function saveCurrent(withPosition) {
     if (currentPreset === "") return
-    if (withPosition) run(["preset", "save", currentPreset])
-    var next = Object.assign({}, presetExtras)
     var image = controls.length > 0 ? Controls.snapshot(controls) : (presetExtras[currentPreset] || {}).image
-    next[currentPreset] = { image: image || {}, audio: status.audio || "", gesture: status.gesture === "true" }
-    savePresetExtras(next)
+    var extra = { image: image || {}, audio: status.audio || "", gesture: status.gesture === "true" }
+    var args = ["preset", "save", currentPreset, "--extras", JSON.stringify(extra)]
+    if (!withPosition) args.push("--no-position")
+    run(args)
   }
 
   // Every setting change made in the panel lands here. The save waits for the
@@ -155,15 +145,12 @@ Panel {
   function deleteCurrent() {
     if (currentPreset === "") return
     run(["preset", "delete", currentPreset])
-    var next = Object.assign({}, presetExtras)
-    delete next[currentPreset]
-    savePresetExtras(next)
     setSetting("preset", "")
     presetsSoon.restart()
   }
 
   // Loading makes it the current preset. One sequential script so the image
-  // writes land after the daemon has settled; values travel as positional
+  // writes land after position; values travel as positional
   // args, never interpolated.
   function loadPreset(name) {
     autosave.stop()
@@ -173,7 +160,6 @@ Panel {
     var image = Controls.applyArgs(extra.image, controls)
     var gesture = extra.gesture === undefined ? "" : (extra.gesture ? "gesture-on" : "gesture-off")
     Quickshell.execDetached(["sh", "-c",
-      'PATH="$PATH:$HOME/.nix-profile/bin:$HOME/.local/bin"\n' +
       '"$0" preset load "$1"\n' +
       '[ -n "$2" ] && "$0" audio "$2"\n' +
       '[ -n "$3" ] && "$0" "$3"\n' +
@@ -205,21 +191,14 @@ Panel {
     if (next.camera === "tracking" || next.camera === "idle") lastMode = next.camera
     if (next.camera !== "idle" || ptzProc.running || motorProc.running) return
     if (previous === "privacy") restoreStatic(next)
-    else if (previous === "tracking") readMotors(true)
     else rememberStatic(next)
   }
 
-  // Tracking moves the motors without telling the daemon or V4L2, which keep
-  // the last position that was *set*. Worse, UVC pan and tilt are one control,
-  // so a stale tilt rides along with the next pan. bin/motorpos reads the real
-  // position from the firmware (GET_MOTOR_POS over hidraw):
-  // - while tracking, the sliders follow it (panel open, once a second);
-  // - Tracking -> Static hands it to the daemon, so sliders, daemon and motors
-  //   agree again before anyone moves a slider.
-  // Privacy -> Static returns to the last Static position, kept across restarts.
+  // bin/pixy reads live motors and submits pan/tilt together, avoiding stale
+  // UVC coordinates. Privacy -> Static restores the remembered position.
   property string hidraw: ""
   // install.sh grants the HID node to the logged-in user; live position, the
-  // privacy timer and emeet-pixyd's HID controls need it. Missing access means
+  // privacy timer and native camera controls need it. Missing access means
   // setup was skipped, so the panel says so instead of offering an option.
   property bool hidrawAccess: true
   readonly property string setupCommand: "'" + Qt.resolvedUrl("install.sh").toString().replace(/^file:\/\//, "") + "'"
@@ -253,12 +232,10 @@ Panel {
   }
 
   property var livePosition: null
-  property bool adoptPending: false
   readonly property var staticPosition: setting("staticPosition", null)
 
-  function readMotors(adopt) {
+  function readMotors() {
     if (hidraw === "" || motorProc.running) return
-    adoptPending = adopt
     motorProc.running = true
   }
 
@@ -266,42 +243,25 @@ Panel {
     var v = String(text).trim().split(/\s+/).map(Number)
     if (v.length !== 2 || isNaN(v[0]) || isNaN(v[1])) return
     livePosition = { pan: v[0], tilt: v[1] }
-    if (!adoptPending) return
-    adoptPending = false
-    // Whole degrees: the motors move at most half a degree.
-    ptzProc.command = ["sh", "-c",
-      'PATH="$PATH:$HOME/.nix-profile/bin:$HOME/.local/bin"\n' +
-      '"$0" pan "$1" && "$0" tilt "$2"',
-      command, String(Math.round(v[0])), String(Math.round(v[1]))]
-    ptzProc.running = true
   }
 
   function rememberStatic(s) {
-    var p = { pan: Number(s.pan), tilt: Number(s.tilt), zoom: Number(s.zoom) }
+    var p = { pan: Math.round(Number(s.pan)), tilt: Math.round(Number(s.tilt)), zoom: Number(s.zoom) }
     if (isNaN(p.pan) || isNaN(p.tilt) || isNaN(p.zoom)) return
     var q = staticPosition
     if (q && q.pan === p.pan && q.tilt === p.tilt && q.zoom === p.zoom) return
     setSetting("staticPosition", p)
   }
 
-  // `center` first: the daemon would skip a move to the position it already
-  // believes in, but privacy moved the motors elsewhere.
+  // Native moves always reach hardware; no daemon cache to reset.
   function restoreStatic(s) {
     var p = staticPosition || { pan: Number(s.pan) || 0, tilt: Number(s.tilt) || 0, zoom: Number(s.zoom) || 100 }
-    ptzProc.command = ["sh", "-c",
-      'PATH="$PATH:$HOME/.nix-profile/bin:$HOME/.local/bin"\n' +
-      '"$0" center && "$0" pan "$1" && "$0" tilt "$2" && "$0" zoom "$3"',
-      command, String(p.pan), String(p.tilt), String(p.zoom)]
+    ptzProc.command = argv(["ptz", String(p.pan), String(p.tilt), String(p.zoom)])
     ptzProc.running = true
   }
 
   function parsePresets(text) {
-    var names = []
-    String(text).split("\n").forEach(function(line) {
-      var m = line.match(/^\s+(\S+):/)
-      if (m) names.push(m[1])
-    })
-    presets = names
+    try { presets = JSON.parse(text) } catch (e) { presets = [] }
   }
 
   function refreshControls() {
@@ -373,19 +333,14 @@ Panel {
   }
 
   function reconnect() {
-    run(["sync"])
+    refresh()
     watch = Watch.reconnected(startPrivacy)
     applyCurrentImage()
   }
 
-  onFollowUsageChanged: if (followUsage) run(["auto-off"])
-
   onOpenedChanged: if (opened) { refresh(); presetsProc.running = true; refreshControls(); privacyTimerCall() }
   onDeviceChanged: { if (opened) refreshControls(); deviceProc.running = true }
-  onCommandChanged: refresh()
-  // sync first: the watcher's first poll adopts the camera state, so it must
-  // be the hardware's, not whatever the daemon last believed.
-  Component.onCompleted: { if (followUsage) { run(["auto-off"]); run(["sync"]) } refresh() }
+  Component.onCompleted: { deviceProc.running = true; refresh() }
 
   Process {
     id: statusProc
@@ -418,8 +373,7 @@ Panel {
     onTriggered: if (!useProc.running) useProc.running = true
   }
 
-  // Camera (re)connects: the daemon re-probes on its own; give it a moment,
-  // then reconcile. The PIXY adds several video nodes, hence the debounce.
+  // The PIXY adds several video nodes on reconnect, hence the debounce.
   Process {
     running: true
     command: ["udevadm", "monitor", "--udev", "--subsystem-match=video4linux"]
@@ -433,7 +387,7 @@ Panel {
   // clamping and (in)active flips, so it can wait for a preset script to finish.
   Timer { id: controlsSoon; interval: 1500; onTriggered: root.refreshControls() }
 
-  // Restore/adopt of the Static position; parseStatus skips memorising while
+  // Restore the Static position; parseStatus skips memorising while
   // it runs so the in-between position is never stored.
   Process {
     id: ptzProc
@@ -441,7 +395,7 @@ Panel {
     onExited: root.refresh()
   }
 
-  // emeet-pixy device -> "/dev/videoN /dev/hidrawM MODEL"
+  // bin/pixy device -> "/dev/videoN /dev/hidrawM MODEL"
   Process {
     id: deviceProc
     command: root.argv(["device"])
@@ -475,14 +429,13 @@ Panel {
     running: root.opened && root.camera === "tracking" && root.hidraw !== ""
     repeat: true
     triggeredOnStart: true
-    onTriggered: root.readMotors(false)
+    onTriggered: root.readMotors()
   }
 
   FileView {
     id: presetsFile
     path: root.presetsPath
     watchChanges: true
-    atomicWrites: true
     printErrors: false
     onLoaded: {
       try { root.presetExtras = JSON.parse(text()).presets || {} } catch (e) { root.presetExtras = {} }
@@ -660,7 +613,7 @@ Panel {
             value: root.camera
             options: [
               { value: "tracking", label: "Track", icon: "\u{F0C7B}" },
-              // emeet-pixyd calls this `idle`: lens open, motors hold position.
+              // `idle`: lens open, motors hold position.
               { value: "idle", label: "Static", icon: "\u{F0403}" },
               { value: "privacy", label: "Privacy", icon: "\u{F0209}" }
             ]
@@ -725,7 +678,7 @@ Panel {
             width: parent.width
             wrapMode: Text.WordWrap
             textFormat: Text.StyledText
-            text: 'Camera control by <a href="https://github.com/LarsArtmann/emeet-pixyd">emeet-pixyd</a>'
+            text: 'Protocol knowledge: <a href="https://github.com/LarsArtmann/emeet-pixyd">emeet-pixyd</a> and EMEET STUDIO RE'
             linkColor: root.fg
             color: root.fg
             opacity: 0.6
@@ -816,7 +769,7 @@ Panel {
           Text {
             visible: root.controls.length === 0
             textFormat: Text.PlainText
-            text: root.device === "" ? "No camera device reported by emeet-pixyd" : "Reading controls…"
+            text: root.device === "" ? "No EMEET PIXY camera found" : "Reading controls…"
             color: root.fg
             opacity: 0.6
             font.family: root.fontFamily

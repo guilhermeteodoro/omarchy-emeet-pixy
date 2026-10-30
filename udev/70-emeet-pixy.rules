@@ -1,6 +1,6 @@
 # EMEET PIXY (328f:00c0) and PIXY 2K (328f:0118): give the logged-in user access
-# to the camera's HID node, which emeet-pixyd and this plugin (motor position,
-# privacy timer) talk to. `uaccess` grants an ACL to the active seat's user
+# to the camera's HID node, used by native control, motor position and the
+# privacy timer. `uaccess` grants an ACL to the active seat's user
 # only; the video node already gets it from systemd's default rules.
 # Install: see README "Device access". Must sort before 73-seat-late.rules.
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="328f", ATTRS{idProduct}=="00c0|0118", TAG+="uaccess"

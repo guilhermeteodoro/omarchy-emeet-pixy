@@ -1,0 +1,268 @@
+#!/usr/bin/python3
+"""Direct PIXY control. Protocol: emeet-pixyd (MIT) and EMEET STUDIO RE.
+No server or persistent state of camera belief. All status queries hit hardware.
+"""
+import argparse
+import ctypes
+import fcntl
+import json
+import math
+import os
+from pathlib import Path
+import select
+import struct
+import sys
+import tempfile
+import time
+
+PRESETS = Path.home() / '.config/omarchy/emeet-pixy-presets.json'
+CAMERA = {'idle': 0, 'tracking': 1, 'privacy': 2}
+AUDIO = {'nc': 1, 'live': 2, 'org': 3}
+IDS = {'pan': 0x009a0908, 'tilt': 0x009a0909, 'zoom': 0x009a090d}
+RANGES = {'pan': (-150, 150), 'tilt': (-90, 90), 'zoom': (100, 150)}
+
+
+def frame(head, payload=b''):
+    return (head + bytes([0]) + struct.pack('<H', len(payload)) + bytes([len(payload)]) + payload).ljust(32, b'\0')
+
+
+def discover():
+    found = {}
+    for kind, prefix, separator, offset in [('video4linux', 'PRODUCT', '/', 0), ('hidraw', 'HID_ID', ':', 1)]:
+        for node in sorted(Path('/sys/class', kind).glob('*')):
+            try:
+                fields = dict(line.split('=', 1) for line in (node / 'device/uevent').read_text().splitlines() if '=' in line)
+                ids = fields.get(prefix, '').split(separator)
+                if int(ids[offset], 16) != 0x328f or int(ids[offset + 1], 16) not in (0xc0, 0x118):
+                    continue
+                if kind == 'video4linux' and (node / 'index').read_text().strip() != '0':
+                    continue
+                if kind == 'hidraw' and not any(s in fields.get('HID_NAME', '') for s in ('EMEET', 'Pixy', 'PIXY')):
+                    continue
+                found[kind] = '/dev/' + node.name
+                break
+            except (OSError, ValueError, IndexError):
+                continue
+    if len(found) != 2:
+        raise OSError('No controllable EMEET PIXY found')
+    return found['video4linux'], found['hidraw']
+
+
+class Camera:
+    def __init__(self, video, hid):
+        self.video = os.open(video, os.O_RDWR)
+        self.hid = os.open(hid, os.O_RDWR | os.O_NONBLOCK)
+
+    def send(self, report):
+        os.write(self.hid, report.ljust(32, b'\0'))
+
+    def query(self, report, motor=None):
+        while select.select([self.hid], [], [], 0)[0]:
+            os.read(self.hid, 64)
+        self.send(report)
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            if not select.select([self.hid], [], [], max(0, deadline - time.monotonic()))[0]:
+                break
+            reply = os.read(self.hid, 64)
+            if len(reply) >= 9 and reply[0] == report[0] and reply[1] & 0x1f == report[1] & 0x1f and reply[2:4] == report[2:4]:
+                if motor is None or (len(reply) >= 17 and reply[8] == motor):
+                    return reply
+        raise TimeoutError('No HID response to ' + report[:4].hex(' '))
+
+    def mode(self, iface, value):
+        if iface == 1:
+            self.send(frame(bytes.fromhex('09 01 01 00'), bytes([value])))
+            time.sleep(.2)
+            self.send(bytes.fromhex('09 01 01 01'))
+        else:
+            # EMEET STUDIO 2.0.4 x64: initializers 0x100090b0b (music)
+            # and 0x10009083b (gesture), sender 0x100667580 uses [type, on].
+            # Legacy daemon audio/gesture config frames do not change hardware.
+            head, payload = (bytes.fromhex('09 05 00 03'), bytes([value])) if iface == 5 else (bytes.fromhex('09 04 02 00'), bytes([2, value]))
+            self.query(frame(head, payload))
+            actual = self.state('audio' if iface == 5 else 'gesture')
+            expected = next(name for name, number in AUDIO.items() if number == value) if iface == 5 else bool(value)
+            if actual != expected:
+                raise OSError('Camera did not apply requested setting')
+
+    def state(self, kind):
+        reports = {'camera': bytes.fromhex('09 01 01 01'), 'audio': bytes.fromhex('09 05 00 04'), 'gesture': bytes.fromhex('09 04 02 01 00 01 00 01 02')}
+        reply = self.query(reports[kind])
+        value = reply[8]
+        # Firmware 2.0.4 reports open-lens standby as 3 without a video stream.
+        if kind == 'camera' and value == 3:
+            return 'idle'
+        if kind == 'gesture':
+            # Payload is [selector=2, enabled], followed by report padding.
+            if len(reply) < 10 or reply[8] != 2:
+                raise ValueError('Invalid gesture response')
+            value = reply[9]
+            if value not in (0, 1):
+                raise ValueError('Invalid gesture response')
+            return bool(value)
+        modes = CAMERA if kind == 'camera' else AUDIO
+        return next((name for name, number in modes.items() if number == value), None) or invalid('Unknown ' + kind + ' mode')
+
+    def motor(self, motor):
+        reply = self.query(frame(bytes.fromhex('09 63 01 01'), bytes([motor])), motor)
+        value = struct.unpack_from('<f', reply, 13)[0]
+        if not math.isfinite(value):
+            raise ValueError('Invalid motor position')
+        return value
+
+    def zoom(self):
+        control = bytearray(struct.pack('Ii', IDS['zoom'], 0))
+        fcntl.ioctl(self.video, 0xc008561b, control)
+        return struct.unpack('Ii', control)[1]
+
+    def position(self):
+        return {'pan': round(self.motor(1)), 'tilt': round(self.motor(2)), 'zoom': self.zoom()}
+
+    def move(self, values):
+        # UVC pan/tilt share a control. Submit both in one extended-controls
+        # cluster, using live HID for the untouched axis, never cached UVC tilt.
+        if 'pan' in values or 'tilt' in values:
+            values = dict(values)
+            for axis, motor in [('pan', 1), ('tilt', 2)]:
+                if axis not in values:
+                    lo, hi = RANGES[axis]
+                    # Sensors can read slightly beyond the mechanical stop.
+                    values[axis] = max(lo, min(hi, self.motor(motor)))
+        controls = (ExtControl * len(values))()
+        for control, (axis, value) in zip(controls, values.items()):
+            lo, hi = RANGES[axis]
+            if not math.isfinite(value) or not lo <= value <= hi:
+                raise ValueError(f'{axis} must be between {lo} and {hi}')
+            control.id = IDS[axis]
+            control.value = round(value * (3600 if axis != 'zoom' else 1))
+        request = ExtControls(0x009a0000, len(controls), 0, 0, 0, controls)
+        fcntl.ioctl(self.video, 0xc0205648, request)
+        # Keep the command lock until Static moves settle, so status/preset
+        # saves cannot capture an intermediate position during a long move.
+        if ('pan' in values or 'tilt' in values) and self.state('camera') == 'idle':
+            deadline = time.monotonic() + 15
+            while any(abs(self.motor(motor) - values[axis]) > .75
+                      for axis, motor in [('pan', 1), ('tilt', 2)]):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('Motor did not reach requested position')
+                time.sleep(.1)
+
+
+class ExtControl(ctypes.Structure):
+    _layout_ = 'ms'
+    _pack_ = 1
+    _fields_ = [('id', ctypes.c_uint32), ('size', ctypes.c_uint32), ('reserved', ctypes.c_uint32), ('value', ctypes.c_int64)]
+
+
+class ExtControls(ctypes.Structure):
+    _fields_ = [('which', ctypes.c_uint32), ('count', ctypes.c_uint32), ('error_idx', ctypes.c_uint32), ('request_fd', ctypes.c_int32), ('reserved', ctypes.c_uint32), ('controls', ctypes.POINTER(ExtControl))]
+
+
+def invalid(message):
+    raise ValueError(message)
+
+
+def presets():
+    try:
+        data = json.loads(PRESETS.read_text())
+    except FileNotFoundError:
+        data = {'version': 1, 'presets': {}}
+    if not isinstance(data, dict) or not isinstance(data.get('presets'), dict):
+        raise ValueError('Invalid presets file; refusing to overwrite it')
+    return data
+
+
+def save(data):
+    PRESETS.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(mode='w', dir=PRESETS.parent, delete=False) as out:
+        try:
+            json.dump(data, out, indent=2, allow_nan=False)
+            out.write('\n')
+            out.close()
+            os.replace(out.name, PRESETS)
+        finally:
+            if os.path.exists(out.name):
+                os.unlink(out.name)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest='verb', required=True)
+    for verb in ('status', 'device', 'track', 'idle', 'privacy', 'toggle-gesture', 'gesture-on', 'gesture-off', 'center'):
+        sub.add_parser(verb)
+    sub.add_parser('audio').add_argument('mode', choices=AUDIO)
+    for axis in IDS:
+        sub.add_parser(axis).add_argument('value', type=float)
+    ptz = sub.add_parser('ptz')
+    for axis in IDS:
+        ptz.add_argument(axis, type=float)
+    preset = sub.add_parser('preset')
+    preset.add_argument('action', choices=['save', 'load', 'delete', 'list'])
+    preset.add_argument('name', nargs='?')
+    preset.add_argument('--extras', type=json.loads)
+    preset.add_argument('--no-position', action='store_true')
+    args = parser.parse_args()
+    # Serialize plugin helpers, including read/modify/write of preset extras.
+    lockdir = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}'))
+    with (lockdir / 'emeet-pixy.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if args.verb == 'preset':
+            data = presets()
+            entries = data['presets']
+            if args.action == 'list':
+                print(json.dumps(sorted(entries)))
+                return
+            if not args.name or not args.name.strip():
+                parser.error('preset name required')
+            if args.action == 'delete':
+                entries.pop(args.name, None)
+                save(data)
+                return
+            if args.action == 'save' and args.no_position:
+                if not isinstance(args.extras, dict):
+                    parser.error('--no-position requires --extras object')
+                entries.setdefault(args.name, {}).update(args.extras)
+                save(data)
+                return
+        video, hid = discover()
+        if args.verb == 'device':
+            print(video, hid, 'PIXY')
+            return
+        cam = Camera(video, hid)
+        if args.verb == 'status':
+            status = {key: cam.state(key) for key in ('camera', 'audio', 'gesture')}
+            status.update(cam.position(), device=video)
+            print(' '.join(f'{key}={str(value).lower()}' for key, value in status.items()))
+        elif args.verb in ('track', 'idle', 'privacy'):
+            cam.mode(1, CAMERA['tracking' if args.verb == 'track' else args.verb])
+        elif args.verb == 'audio':
+            cam.mode(5, AUDIO[args.mode])
+        elif args.verb in ('toggle-gesture', 'gesture-on', 'gesture-off'):
+            enabled = not cam.state('gesture') if args.verb == 'toggle-gesture' else args.verb == 'gesture-on'
+            cam.mode(4, int(enabled))
+        elif args.verb in IDS:
+            cam.move({args.verb: args.value})
+        elif args.verb == 'ptz':
+            cam.move({axis: getattr(args, axis) for axis in IDS})
+        elif args.verb == 'center':
+            cam.move({'pan': 0, 'tilt': 0, 'zoom': 100})
+        elif args.action == 'save':
+            extra = args.extras or {}
+            if not isinstance(extra, dict):
+                parser.error('--extras must be an object')
+            entries.setdefault(args.name, {}).update(extra, **cam.position())
+            save(data)
+        elif args.action == 'load':
+            entry = entries[args.name]
+            cam.move({key: float(entry[key]) for key in IDS})
+        os.close(cam.hid)
+        os.close(cam.video)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (OSError, ValueError, KeyError, TimeoutError) as error:
+        print(f'pixy: {error}', file=sys.stderr)
+        sys.exit(1)
