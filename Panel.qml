@@ -574,20 +574,20 @@ Panel {
               font.pixelSize: Style.font.display
             }
           }
-          Action {
-            anchors.top: parent.top
-            anchors.right: parent.right
-            bordered: false
-            horizontalPadding: 0
-            verticalPadding: 0
-            iconText: root.preview ? "\u{F05A1}" : "\u{F05A0}"
-            opacity: root.preview ? 1.0 : 0.6
-            tooltipText: (root.preview ? "Hide preview" : "Live preview") + (root.status.device ? " (" + root.status.device + ")" : "")
-            // Turning it on opens the lens in the meeting mode; Static returns
-            // to the last Static position (Privacy -> Static restore).
-            onClicked: {
-              if (!root.preview && root.camera === "privacy") root.run([root.meetingMode])
-              root.setSetting("preview", !root.preview)
+          trailingControl: Component {
+            Action {
+              bordered: false
+              horizontalPadding: 0
+              verticalPadding: 0
+              iconText: root.preview ? "\u{F05A1}" : "\u{F05A0}"
+              opacity: root.preview ? 1.0 : 0.6
+              tooltipText: (root.preview ? "Hide preview" : "Live preview") + (root.status.device ? " (" + root.status.device + ")" : "")
+              // Turning it on opens the lens in the meeting mode; Static returns
+              // to the last Static position (Privacy -> Static restore).
+              onClicked: {
+                if (!root.preview && root.camera === "privacy") root.run([root.meetingMode])
+                root.setSetting("preview", !root.preview)
+              }
             }
           }
         }
