@@ -301,7 +301,7 @@ Panel {
     if (previewProc.running && watch.primed && watch.state !== "tracking")
       watch = Object.assign({}, watch, { state: "tracking" })
     var inUse = videoBusy || capturing
-    var r = Watch.step(watch, inUse, camera, startPrivacy, Watch.endPolls(privacyDelay))
+    var r = Watch.step(watch, videoBusy, capturing, camera, startPrivacy, Watch.endPolls(privacyDelay))
     watch = r.next
     if (!wasPrimed && !inUse) applyCurrentImage()
     if (r.action === "track") {

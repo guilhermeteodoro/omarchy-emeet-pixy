@@ -16,13 +16,16 @@ when the camera connects. No daemon, HTTP server or user service is required.
 With `followUsage` on (default), every 2 seconds the widget checks whether any
 process is *streaming* from the camera (`bin/streaming`: `VIDIOC_REQBUFS`
 returns `EBUSY` while another process owns the stream; just holding the device
-open, as browsers do, does not count) or any app records audio (PipeWire
-capture streams):
+open, as browsers do, does not count) and whether any app records audio
+(PipeWire capture streams):
 
-- in use for ~4s: the **Meeting starts in** mode (`meetingMode`: `track`, the
-  default, or `idle` = Static, which returns to the last Static position) plus
-  the current preset's audio mode (`nc` without one);
-- idle for `privacyDelaySec` seconds (default 10): `privacy`.
+- PIXY streaming for ~4s: the **Meeting starts in** mode (`meetingMode`:
+  `track`, the default, or `idle` = Static, which returns to the last Static
+  position) plus the current preset's audio mode (`nc` without one). Audio
+  alone never opens the lens, so a call that picked another camera leaves the
+  PIXY visibly closed;
+- neither for `privacyDelaySec` seconds (default 10): `privacy`. Recording
+  audio keeps the lens open, so turning video off mid-call doesn't close it.
 
 Every status poll reads the hardware directly; the first poll adopts its state:
 restarting the shell mid-call with the lens open never switches it, and a

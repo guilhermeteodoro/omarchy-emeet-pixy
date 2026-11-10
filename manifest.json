@@ -57,7 +57,7 @@
         "key": "followUsage",
         "type": "boolean",
         "label": "Follow camera use",
-        "description": "Open the lens (Meeting starts in) and switch to the preset's audio mode ~4s after an app uses the camera or microphone; privacy after the configured idle delay.",
+        "description": "Open the lens (Meeting starts in) and switch to the preset's audio mode ~4s after an app streams from the PIXY (microphone use alone never opens it); privacy after the configured idle delay.",
         "defaultValue": true
       },
       {

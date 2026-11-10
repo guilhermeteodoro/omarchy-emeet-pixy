@@ -1,5 +1,7 @@
 // Camera-use follower (replaces the old emeet-watch service): open the lens
-// and track while an app uses the camera or microphone, privacy once idle.
+// and track while an app streams from the PIXY, privacy once camera and
+// microphone are idle. Audio alone never opens the lens: it would hide a call
+// that picked another camera.
 
 var START_POLLS = 2 // x 2s: lens opens ~4s after an app starts using the camera
 var POLL_SEC = 2
@@ -21,19 +23,21 @@ function reconnected(startPrivacy) {
   return { primed: true, state: startPrivacy ? "" : "privacy", busy: 0, idle: 0 }
 }
 
-// One poll. Returns { next, action } with action "", "track" or "privacy".
+// One poll. `video`: some app streams from the PIXY; `audio`: some app records
+// audio. Returns { next, action } with action "", "track" or "privacy".
 // The first poll adopts the camera's hardware state instead of commanding it: a
 // shell restart mid-call with the lens open never switches the camera, a
 // privacy start with an app streaming still opens the lens, and an idle start
 // with the lens open gets privacy only with startPrivacy (login / boot).
-function step(s, inUse, camera, startPrivacy, idlePolls) {
+function step(s, video, audio, camera, startPrivacy, idlePolls) {
   var end = idlePolls || END_POLLS
+  var inUse = video || audio
   if (!s.primed) {
     var state = camera === "privacy" || !startPrivacy ? "privacy" : (inUse ? "tracking" : "")
     if (camera !== "privacy" && inUse) state = "tracking"
     return { next: { primed: true, state: state, busy: 0, idle: 0 }, action: "" }
   }
-  var busy = inUse ? s.busy + 1 : 0
+  var busy = video ? s.busy + 1 : 0
   var idle = inUse ? 0 : s.idle + 1
   if (s.state !== "tracking" && busy >= START_POLLS)
     return { next: { primed: true, state: "tracking", busy: busy, idle: idle }, action: "track" }
